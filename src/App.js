@@ -702,6 +702,182 @@ function EventsModule({ currentUser }) {
   );
 }
 
+
+// ── GALERÍA ──────────────────────────────────────────────────
+function GalleryModule({ currentUser }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [filter, setFilter] = useState("all");
+  const [galToast, setGalToast] = useState(null);
+  const [form, setForm] = useState({ title:"", type:"foto", file:null, video_url:"" });
+
+  const showGalToast = (msg, type="info") => setGalToast({ msg, type, key: Date.now() });
+
+  useEffect(() => {
+    supabase.from("gallery").select("*").order("created_at", { ascending: false }).then(({ data }) => {
+      if (data) setItems(data);
+      setLoading(false);
+    });
+  }, []);
+
+  const handleUpload = async () => {
+    if (!form.title) { showGalToast("El título es obligatorio","error"); return; }
+    if (form.type === "foto" && !form.file) { showGalToast("Selecciona una imagen","error"); return; }
+    if (form.type === "video" && !form.video_url) { showGalToast("Pega el link del video","error"); return; }
+    setUploading(true);
+    let url = form.video_url;
+    if (form.type === "foto") {
+      const ext = form.file.name.split(".").pop();
+      const filename = `${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from("gallery").upload(filename, form.file);
+      if (uploadError) { showGalToast("Error al subir imagen: " + uploadError.message,"error"); setUploading(false); return; }
+      const { data: urlData } = supabase.storage.from("gallery").getPublicUrl(filename);
+      url = urlData.publicUrl;
+    }
+    const { data, error } = await supabase.from("gallery").insert({
+      title: form.title, type: form.type, url,
+      uploaded_by: currentUser.id, uploaded_by_name: currentUser.name
+    }).select().single();
+    if (error) { showGalToast("Error al guardar: " + error.message,"error"); setUploading(false); return; }
+    setItems(i => [data, ...i]);
+    showGalToast("Archivo subido correctamente","success");
+    setShowForm(false);
+    setForm({ title:"", type:"foto", file:null, video_url:"" });
+    setUploading(false);
+  };
+
+  const getYoutubeEmbed = (url) => {
+    const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/);
+    return match ? `https://www.youtube.com/embed/${match[1]}` : null;
+  };
+
+  const grouped = items.filter(i => filter==="all" || i.type===filter).reduce((acc, item) => {
+    const date = new Date(item.created_at);
+    const key = `${date.getFullYear()} — ${MONTHS[date.getMonth()]}`;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(item);
+    return acc;
+  }, {});
+
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24,flexWrap:"wrap",gap:12}}>
+        <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:18,fontWeight:700}}>🖼️ Galería Multimedia</div>
+        <div style={{display:"flex",gap:10,alignItems:"center"}}>
+          <div style={{display:"flex",gap:4,background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:4}}>
+            {[["all","Todos"],["foto","Fotos"],["video","Videos"]].map(([val,label])=>(
+              <button key={val} onClick={()=>setFilter(val)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,background:filter===val?C.blue:"transparent",color:filter===val?"#fff":C.muted,transition:"all 0.15s"}}>{label}</button>
+            ))}
+          </div>
+          <button className="btn-sm btn-blue" onClick={()=>setShowForm(true)}>+ Subir</button>
+        </div>
+      </div>
+
+      {loading && <div style={{textAlign:"center",padding:40,color:C.muted}}>Cargando galería…</div>}
+
+      {!loading && Object.keys(grouped).length === 0 && (
+        <div style={{textAlign:"center",padding:60,color:C.muted}}>
+          <div style={{fontSize:48,marginBottom:12}}>🖼️</div>
+          <div style={{fontSize:14}}>No hay archivos aún. ¡Sé el primero en subir!</div>
+        </div>
+      )}
+
+      {Object.entries(grouped).map(([month, monthItems]) => (
+        <div key={month} style={{marginBottom:32}}>
+          <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:14,fontWeight:700,color:C.muted,marginBottom:12,display:"flex",alignItems:"center",gap:10}}>
+            <span>{month}</span>
+            <span style={{flex:1,height:1,background:C.border}}/>
+            <span style={{fontSize:12}}>{monthItems.length} archivo(s)</span>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
+            {monthItems.map(item => (
+              <div key={item.id} onClick={()=>setSelected(item)} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",cursor:"pointer",transition:"transform 0.15s, box-shadow 0.15s"}}
+                onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow="0 8px 24px rgba(0,0,0,0.3)";}}
+                onMouseLeave={e=>{e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="none";}}>
+                {item.type === "foto" ? (
+                  <img src={item.url} alt={item.title} style={{width:"100%",height:140,objectFit:"cover"}} onError={e=>e.target.style.display="none"}/>
+                ) : (
+                  <div style={{width:"100%",height:140,background:C.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:36}}>▶️</div>
+                )}
+                <div style={{padding:"10px 12px"}}>
+                  <div style={{fontSize:13,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.title}</div>
+                  <div style={{fontSize:11,color:C.muted,marginTop:3}}>{item.uploaded_by_name} · {new Date(item.created_at).toLocaleDateString("es")}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {selected && (
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setSelected(null)}>
+          <div className="modal" style={{maxWidth:640}}>
+            <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:18,fontWeight:700,marginBottom:16}}>{selected.title}</div>
+            {selected.type === "foto" ? (
+              <img src={selected.url} alt={selected.title} style={{width:"100%",borderRadius:10,maxHeight:400,objectFit:"contain",background:C.darker}}/>
+            ) : (
+              getYoutubeEmbed(selected.url) ? (
+                <iframe src={getYoutubeEmbed(selected.url)} style={{width:"100%",height:320,borderRadius:10,border:"none"}} allowFullScreen title={selected.title}/>
+              ) : (
+                <video src={selected.url} controls style={{width:"100%",borderRadius:10,maxHeight:400}}/>
+              )
+            )}
+            <div style={{marginTop:12,fontSize:12,color:C.muted}}>
+              Subido por <strong style={{color:C.text}}>{selected.uploaded_by_name}</strong> · {new Date(selected.created_at).toLocaleDateString("es")}
+            </div>
+            <div style={{marginTop:8,fontSize:11,color:C.muted,fontStyle:"italic"}}>🔒 Este archivo es permanente y no puede ser eliminado</div>
+            <div className="modal-actions"><button className="btn-sm btn-ghost" onClick={()=>setSelected(null)}>Cerrar</button></div>
+          </div>
+        </div>
+      )}
+
+      {showForm && (
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowForm(false)}>
+          <div className="modal" style={{maxWidth:480}}>
+            <div className="modal-title">📤 Subir Archivo</div>
+            <div className="field"><label>Título *</label><input type="text" placeholder="Describe este archivo" value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))}/></div>
+            <div className="field">
+              <label>Tipo</label>
+              <select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value,file:null,video_url:""}))}>
+                <option value="foto">📷 Foto</option>
+                <option value="video">🎥 Video</option>
+              </select>
+            </div>
+            {form.type === "foto" ? (
+              <div className="field">
+                <label>Imagen (JPG, PNG, WEBP)</label>
+                <label className="upload-zone" style={{display:"block",cursor:"pointer"}}>
+                  <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>setForm(f=>({...f,file:e.target.files[0]}))}/>
+                  <div className="upload-icon">{form.file?"✅":"📷"}</div>
+                  <div className="upload-text">{form.file?form.file.name:"Clic para seleccionar imagen"}</div>
+                  <div className="upload-hint">JPG, PNG, WEBP — máx 50MB</div>
+                </label>
+              </div>
+            ) : (
+              <div className="field">
+                <label>Link del video (YouTube o URL directa)</label>
+                <input type="url" placeholder="https://youtube.com/watch?v=..." value={form.video_url} onChange={e=>setForm(f=>({...f,video_url:e.target.value}))}/>
+              </div>
+            )}
+            <div style={{fontSize:12,color:C.muted,marginTop:8,padding:"10px",background:`${C.orange}11`,borderRadius:8,border:`1px solid ${C.orange}22`}}>
+              ⚠️ Los archivos subidos son <strong>permanentes</strong> y no podrán ser eliminados.
+            </div>
+            <div className="modal-actions">
+              <button className="btn-sm btn-ghost" onClick={()=>setShowForm(false)}>Cancelar</button>
+              <button className="btn-sm btn-blue" onClick={handleUpload} disabled={uploading}>{uploading?"Subiendo…":"Subir Archivo"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {galToast && <Toast key={galToast.key} msg={galToast.msg} type={galToast.type} onClose={()=>setGalToast(null)}/>}
+    </div>
+  );
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [users, setUsers] = useState([]);
@@ -740,7 +916,7 @@ export default function App() {
       case "announcements": return <PlaceholderModule icon="📢" name="Anuncios y Comunicados" desc="Publica noticias y comunicados oficiales de GTA."/>;
       case "events":        return <EventsModule currentUser={user}/>;
       case "processes":     return <PlaceholderModule icon="📋" name="Procesos y Documentos" desc="Centraliza manuales y procedimientos oficiales de GTA."/>;
-      case "gallery":       return <PlaceholderModule icon="🖼️" name="Galería Multimedia" desc="Sube fotos y videos corporativos permanentes."/>;
+      case "gallery":       return <GalleryModule currentUser={user}/>;
       default: return null;
     }
   };
