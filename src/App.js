@@ -712,7 +712,7 @@ function GalleryModule({ currentUser }) {
   const [selected, setSelected] = useState(null);
   const [filter, setFilter] = useState("all");
   const [galToast, setGalToast] = useState(null);
-  const [form, setForm] = useState({ title:"", type:"foto", file:null, video_url:"" });
+  const [form, setForm] = useState({ title:"", type:"foto", file:null });
 
   const showGalToast = (msg, type="info") => setGalToast({ msg, type, key: Date.now() });
 
@@ -726,14 +726,14 @@ function GalleryModule({ currentUser }) {
   const handleUpload = async () => {
     if (!form.title) { showGalToast("El título es obligatorio","error"); return; }
     if (form.type === "foto" && !form.file) { showGalToast("Selecciona una imagen","error"); return; }
-    if (form.type === "video" && !form.video_url) { showGalToast("Pega el link del video","error"); return; }
+    if (form.type === "video" && !form.file) { showGalToast("Selecciona un video","error"); return; }
     setUploading(true);
-    let url = form.video_url;
-    if (form.type === "foto") {
+    let url = "";
+    if (form.type === "foto" || form.type === "video") {
       const ext = form.file.name.split(".").pop();
       const filename = `${Date.now()}.${ext}`;
       const { error: uploadError } = await supabase.storage.from("gallery").upload(filename, form.file);
-      if (uploadError) { showGalToast("Error al subir imagen: " + uploadError.message,"error"); setUploading(false); return; }
+      if (uploadError) { showGalToast("Error al subir archivo: " + uploadError.message,"error"); setUploading(false); return; }
       const { data: urlData } = supabase.storage.from("gallery").getPublicUrl(filename);
       url = urlData.publicUrl;
     }
@@ -745,7 +745,7 @@ function GalleryModule({ currentUser }) {
     setItems(i => [data, ...i]);
     showGalToast("Archivo subido correctamente","success");
     setShowForm(false);
-    setForm({ title:"", type:"foto", file:null, video_url:"" });
+    setForm({ title:"", type:"foto", file:null });
     setUploading(false);
   };
 
@@ -858,8 +858,13 @@ function GalleryModule({ currentUser }) {
               </div>
             ) : (
               <div className="field">
-                <label>Link del video (YouTube o URL directa)</label>
-                <input type="url" placeholder="https://youtube.com/watch?v=..." value={form.video_url} onChange={e=>setForm(f=>({...f,video_url:e.target.value}))}/>
+                <label>Video (MP4, MOV, AVI, etc.)</label>
+                <label className="upload-zone" style={{display:"block",cursor:"pointer"}}>
+                  <input type="file" accept="video/*" style={{display:"none"}} onChange={e=>setForm(f=>({...f,file:e.target.files[0]}))}/>
+                  <div className="upload-icon">{form.file?"✅":"🎥"}</div>
+                  <div className="upload-text">{form.file?form.file.name:"Clic para seleccionar video"}</div>
+                  <div className="upload-hint">MP4, MOV, AVI, WEBM — máx 50MB</div>
+                </label>
               </div>
             )}
             <div style={{fontSize:12,color:C.muted,marginTop:8,padding:"10px",background:`${C.orange}11`,borderRadius:8,border:`1px solid ${C.orange}22`}}>
