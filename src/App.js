@@ -484,9 +484,30 @@ function UserManagement({ users, setUsers, showToast, currentUser }) {
 
 function Settings({ logoUrl, setLogoUrl, showToast }) {
   const [inputUrl, setInputUrl] = useState(logoUrl||"");
-  const save = () => { setLogoUrl(inputUrl); showToast("Logo actualizado","success"); };
+  const [config, setConfig] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    supabase.from("portal_config").select("*").eq("id",1).single().then(({data})=>{
+      if (data) setConfig(data);
+    });
+  }, []);
+
+  const saveLogo = () => { setLogoUrl(inputUrl); showToast("Logo actualizado","success"); };
+
+  const saveConfig = async () => {
+    setSaving(true);
+    const { error } = await supabase.from("portal_config").update(config).eq("id",1);
+    if (error) showToast("Error al guardar: "+error.message,"error");
+    else showToast("Portal actualizado correctamente","success");
+    setSaving(false);
+  };
+
+  const updateConfig = (key, val) => setConfig(c => ({...c, [key]: val}));
+
   return (
     <div>
+      {/* LOGO */}
       <div className="table-card" style={{padding:28,marginBottom:20}}>
         <div className="table-title" style={{marginBottom:20}}>🖼️ Logo de la Intranet</div>
         <div style={{fontSize:13,color:C.muted,marginBottom:16,lineHeight:1.7}}>
@@ -498,8 +519,85 @@ function Settings({ logoUrl, setLogoUrl, showToast }) {
             value={inputUrl} onChange={e=>setInputUrl(e.target.value)}/>
         </div>
         {inputUrl && <div style={{marginBottom:16}}><img src={inputUrl} alt="preview" style={{height:48,borderRadius:8,border:`1px solid ${C.border}`}} onError={e=>e.target.style.display="none"}/></div>}
-        <button className="btn-sm btn-blue" onClick={save}>💾 Guardar Logo</button>
+        <button className="btn-sm btn-blue" onClick={saveLogo}>💾 Guardar Logo</button>
       </div>
+
+      {/* PORTAL CONFIG */}
+      {config && (
+        <div className="table-card" style={{padding:28,marginBottom:20}}>
+          <div className="table-title" style={{marginBottom:6}}>🎨 Personalización del Portal del Empleado</div>
+          <div style={{fontSize:13,color:C.muted,marginBottom:24}}>Estos cambios se reflejan en tiempo real en lo que ven los empleados.</div>
+
+          {/* HERO */}
+          <div style={{fontFamily:"'Exo 2',sans-serif",fontWeight:700,fontSize:14,marginBottom:12,color:C.blue}}>Banner de Bienvenida</div>
+          <div className="field">
+            <label>Título de bienvenida</label>
+            <input type="text" value={config.hero_title} onChange={e=>updateConfig("hero_title",e.target.value)} placeholder="¡Bienvenido a SomosGTA!"/>
+          </div>
+          <div className="field">
+            <label>Subtítulo</label>
+            <input type="text" value={config.hero_subtitle} onChange={e=>updateConfig("hero_subtitle",e.target.value)} placeholder="Tu espacio de comunicación interna"/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <div className="field">
+              <label>Color inicio del banner</label>
+              <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                <input type="color" value={config.hero_color_start} onChange={e=>updateConfig("hero_color_start",e.target.value)} style={{width:48,height:40,borderRadius:8,border:"none",cursor:"pointer",background:"none"}}/>
+                <input type="text" value={config.hero_color_start} onChange={e=>updateConfig("hero_color_start",e.target.value)} style={{flex:1,background:C.darker,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 14px",color:C.text,fontSize:14,outline:"none"}}/>
+              </div>
+            </div>
+            <div className="field">
+              <label>Color fin del banner</label>
+              <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                <input type="color" value={config.hero_color_end} onChange={e=>updateConfig("hero_color_end",e.target.value)} style={{width:48,height:40,borderRadius:8,border:"none",cursor:"pointer",background:"none"}}/>
+                <input type="text" value={config.hero_color_end} onChange={e=>updateConfig("hero_color_end",e.target.value)} style={{flex:1,background:C.darker,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 14px",color:C.text,fontSize:14,outline:"none"}}/>
+              </div>
+            </div>
+          </div>
+          <div className="field">
+            <label>Imagen de fondo del banner (URL Supabase Storage)</label>
+            <input type="url" value={config.hero_bg_image} onChange={e=>updateConfig("hero_bg_image",e.target.value)} placeholder="https://... (opcional)"/>
+          </div>
+
+          {/* PREVIEW HERO */}
+          <div style={{borderRadius:12,padding:"28px 32px",marginBottom:24,background:`linear-gradient(135deg, ${config.hero_color_start}, ${config.hero_color_end})`,backgroundImage:config.hero_bg_image?`url(${config.hero_bg_image})`:"none",backgroundSize:"cover",backgroundPosition:"center",position:"relative",overflow:"hidden"}}>
+            <div style={{position:"absolute",inset:0,background:`linear-gradient(135deg, ${config.hero_color_start}cc, ${config.hero_color_end}cc)`}}/>
+            <div style={{position:"relative",zIndex:1}}>
+              <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:20,fontWeight:900,color:"#fff",marginBottom:6}}>{config.hero_title||"Título"}</div>
+              <div style={{fontSize:13,color:"rgba(255,255,255,0.85)"}}>{config.hero_subtitle||"Subtítulo"}</div>
+            </div>
+          </div>
+
+          {/* SECCIONES */}
+          <div style={{fontFamily:"'Exo 2',sans-serif",fontWeight:700,fontSize:14,marginBottom:12,color:C.blue}}>Secciones Visibles</div>
+          <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:24}}>
+            {[
+              {key:"show_events",label:"📅 Eventos"},
+              {key:"show_photos",label:"📷 Fotos"},
+              {key:"show_videos",label:"🎥 Videos"},
+            ].map(s=>(
+              <div key={s.key} onClick={()=>updateConfig(s.key,!config[s.key])}
+                style={{display:"flex",alignItems:"center",gap:10,padding:"12px 20px",borderRadius:10,cursor:"pointer",border:`2px solid ${config[s.key]?C.green:C.border}`,background:config[s.key]?`${C.green}18`:C.darker,transition:"all 0.2s"}}>
+                <div style={{width:20,height:20,borderRadius:4,background:config[s.key]?C.green:C.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:"#fff",fontWeight:700}}>{config[s.key]?"✓":""}</div>
+                <span style={{fontSize:14,fontWeight:500,color:config[s.key]?C.green:C.muted}}>{s.label}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* FOOTER */}
+          <div style={{fontFamily:"'Exo 2',sans-serif",fontWeight:700,fontSize:14,marginBottom:12,color:C.blue}}>Pie de Página</div>
+          <div className="field">
+            <label>Texto del pie de página</label>
+            <input type="text" value={config.footer_text} onChange={e=>updateConfig("footer_text",e.target.value)} placeholder="SomosGTA © Grupo de Tiendas Asociadas S.A."/>
+          </div>
+
+          <button className="btn-sm btn-blue" onClick={saveConfig} disabled={saving} style={{marginTop:8}}>
+            {saving?"Guardando…":"💾 Guardar Configuración del Portal"}
+          </button>
+        </div>
+      )}
+
+      {/* COLORES */}
       <div className="table-card" style={{padding:28}}>
         <div className="table-title" style={{marginBottom:20}}>🎨 Colores Corporativos GTA</div>
         <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
@@ -940,6 +1038,7 @@ export default function App() {
 
   if (!user) return <><style>{css}</style><LoginPage onLogin={setUser} logoUrl={logoUrl}/></>;
   if (user.role === "empleado") return <EmployeePortal user={user} />;
+
   return (
     <><style>{css}</style>
     <div className="app">
@@ -964,14 +1063,23 @@ function EmployeePortal({ user }) {
   const [gallery, setGallery] = useState([]);
   const [carouselIdx, setCarouselIdx] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [config, setConfig] = useState({
+    hero_title:"¡Bienvenido a SomosGTA!",
+    hero_subtitle:"Grupo de Tiendas Asociadas S.A. — Tu espacio de comunicación interna",
+    hero_color_start:"#00aeef", hero_color_end:"#60bb46", hero_bg_image:"",
+    show_events:true, show_photos:true, show_videos:true,
+    footer_text:"SomosGTA © Grupo de Tiendas Asociadas S.A."
+  });
 
   useEffect(() => {
     Promise.all([
       supabase.from("events").select("*").gte("date", new Date().toISOString().slice(0,10)).order("date").limit(6),
-      supabase.from("gallery").select("*").order("created_at", { ascending: false }).limit(12)
-    ]).then(([{ data: ev }, { data: gal }]) => {
+      supabase.from("gallery").select("*").order("created_at", { ascending: false }).limit(12),
+      supabase.from("portal_config").select("*").eq("id",1).single()
+    ]).then(([{ data: ev }, { data: gal }, { data: cfg }]) => {
       if (ev) setEvents(ev);
       if (gal) setGallery(gal);
+      if (cfg) setConfig(cfg);
       setLoading(false);
     });
   }, []);
@@ -1061,9 +1169,12 @@ function EmployeePortal({ user }) {
 
         <div className="portal-content">
           {/* HERO */}
-          <div className="portal-hero">
-            <h1>¡Bienvenido, {user.name.split(" ")[0]}! 👋</h1>
-            <p>Grupo de Tiendas Asociadas S.A. — Tu espacio de comunicación interna</p>
+          <div className="portal-hero" style={{background:`linear-gradient(135deg, ${config.hero_color_start}, ${config.hero_color_end})`, backgroundImage:config.hero_bg_image?`url(${config.hero_bg_image})`:"none", backgroundSize:"cover", backgroundPosition:"center", position:"relative"}}>
+            <div style={{position:"absolute",inset:0,background:`linear-gradient(135deg, ${config.hero_color_start}cc, ${config.hero_color_end}cc)`,borderRadius:20}}/>
+            <div style={{position:"relative",zIndex:1}}>
+              <h1>{config.hero_title} 👋</h1>
+              <p>{config.hero_subtitle}</p>
+            </div>
           </div>
 
           {/* CARRUSEL */}
@@ -1087,7 +1198,7 @@ function EmployeePortal({ user }) {
           )}
 
           {/* EVENTOS */}
-          <div style={{marginBottom:32}}>
+          {config.show_events && <div style={{marginBottom:32}}>
             <div className="portal-section-title">📅 Próximos Eventos</div>
             {events.length === 0 ? (
               <div className="portal-empty">No hay eventos próximos programados</div>
@@ -1106,10 +1217,10 @@ function EmployeePortal({ user }) {
                 ))}
               </div>
             )}
-          </div>
+          </div>}
 
           {/* VIDEOS */}
-          {videos.length > 0 && (
+          {config.show_videos && videos.length > 0 && (
             <div style={{marginBottom:32}}>
               <div className="portal-section-title">🎥 Videos</div>
               <div className="gallery-grid">
@@ -1124,7 +1235,7 @@ function EmployeePortal({ user }) {
           )}
 
           {/* GALERÍA COMPLETA */}
-          {photos.length > 0 && (
+          {config.show_photos && photos.length > 0 && (
             <div style={{marginBottom:32}}>
               <div className="portal-section-title">🖼️ Fotos</div>
               <div className="gallery-grid">
@@ -1141,7 +1252,7 @@ function EmployeePortal({ user }) {
 
           {/* FOOTER */}
           <div style={{textAlign:"center",padding:"20px 0",borderTop:"1px solid #e0e0e0",color:"#bbb",fontSize:12}}>
-            SomosGTA © {new Date().getFullYear()} — Grupo de Tiendas Asociadas S.A.
+            {config.footer_text}
             <button className="portal-logout" style={{marginLeft:16}} onClick={async()=>{await supabase.auth.signOut();window.location.reload();}}>Cerrar sesión</button>
           </div>
         </div>
