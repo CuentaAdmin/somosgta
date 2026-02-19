@@ -1261,9 +1261,9 @@ function EmployeePortal({ user }) {
 
   const createFolder = () => {
     if (!newFolderName.trim()) return;
-    const name = newFolderName.trim();
-    if (!folders.includes(name)) setFolders(f => [...f, name]);
-    setActiveFolder(name);
+    const name = newFolderName.trim().replace(/\//g,"");
+    const fullPath = activeFolder && !activeFolder.includes("/") ? activeFolder+"/"+name : name;
+    setActiveFolder(fullPath);
     setNewFolderName("");
     setShowNewFolder(false);
   };
@@ -1573,30 +1573,64 @@ function EmployeePortal({ user }) {
           </>}
 
           {/* ── GALERÍA ── */}
-          {section === "gallery" && <>
-            <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
-              <button className={`folder-chip ${!activeFolder?"active":""}`} onClick={()=>setActiveFolder(null)}>📁 General</button>
-              {folders.map(f=>(
-                <button key={f} className={`folder-chip ${activeFolder===f?"active":""}`} onClick={()=>setActiveFolder(f)}>📂 {f}</button>
-              ))}
-              <button className="folder-chip" onClick={()=>setShowNewFolder(true)} style={{borderStyle:"dashed"}}>+ Nueva Carpeta</button>
-              <button className="btn-portal btn-portal-blue" style={{marginLeft:"auto"}} onClick={()=>setShowUpload(true)}>+ Subir Archivo</button>
-            </div>
+          {section === "gallery" && (()=>{
+            // Nivel actual: null=raiz, "Carpeta"=carpeta, "Carpeta/Sub"=subcarpeta
+            const rootFolders = [...new Set(gallery.map(g=>g.folder).filter(Boolean).map(f=>f.split("/")[0]))];
+            const isInFolder = activeFolder && !activeFolder.includes("/");
+            const subFolders = isInFolder
+              ? [...new Set(gallery.filter(g=>g.folder&&g.folder.startsWith(activeFolder+"/")).map(g=>g.folder.split("/")[1]))]
+              : [];
+            const currentItems = !activeFolder
+              ? gallery.filter(g=>!g.folder)
+              : gallery.filter(g=>g.folder===activeFolder);
 
-            {folderItems.length===0 && <div className="portal-empty"><div style={{fontSize:40,marginBottom:10}}>📂</div>Esta carpeta está vacía</div>}
+            return <>
+              {/* BREADCRUMB */}
+              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:14,fontSize:13,color:"#888"}}>
+                <button onClick={()=>setActiveFolder(null)} style={{background:"none",border:"none",cursor:"pointer",color:!activeFolder?"#1a1a2e":C.blue,fontWeight:!activeFolder?700:400,fontSize:13,padding:0}}>📁 General</button>
+                {activeFolder && <>
+                  <span>›</span>
+                  <button onClick={()=>setActiveFolder(activeFolder.split("/")[0])} style={{background:"none",border:"none",cursor:"pointer",color:activeFolder.includes("/")?C.blue:"#1a1a2e",fontWeight:activeFolder.includes("/")?400:700,fontSize:13,padding:0}}>📂 {activeFolder.split("/")[0]}</button>
+                </>}
+                {activeFolder?.includes("/") && <>
+                  <span>›</span>
+                  <span style={{color:"#1a1a2e",fontWeight:700}}>📂 {activeFolder.split("/")[1]}</span>
+                </>}
+              </div>
 
-            <div className="gallery-grid">
-              {folderItems.map(item=>(
-                <div key={item.id} className="gallery-thumb" onClick={()=>setViewItem(item)}>
-                  {item.type==="foto"
-                    ? <img src={item.url} alt={item.title} onError={e=>e.target.style.display="none"}/>
-                    : <div className="gallery-thumb-video">▶️</div>
-                  }
-                  <div style={{position:"absolute",bottom:0,left:0,right:0,background:"linear-gradient(transparent,rgba(0,0,0,0.65))",padding:"8px",fontSize:11,color:"#fff",fontWeight:500}}>{item.title}</div>
-                </div>
-              ))}
-            </div>
-          </>}
+              {/* CARPETAS / SUBCARPETAS */}
+              <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+                {!activeFolder && rootFolders.map(f=>(
+                  <button key={f} className="folder-chip" onClick={()=>setActiveFolder(f)}>📂 {f}</button>
+                ))}
+                {isInFolder && subFolders.map(s=>(
+                  <button key={s} className="folder-chip" onClick={()=>setActiveFolder(activeFolder+"/"+s)}>📂 {s}</button>
+                ))}
+                <button className="folder-chip" onClick={()=>setShowNewFolder(true)} style={{borderStyle:"dashed"}}>
+                  {!activeFolder?"+ Nueva Carpeta":isInFolder?"+ Nueva Subcarpeta":""}
+                  {activeFolder?.includes("/")?"":""}
+                  {(!activeFolder||isInFolder)?"":""}
+                  {activeFolder?.includes("/")?null:""}
+                </button>
+                {!activeFolder && <button className="folder-chip" onClick={()=>setShowNewFolder(true)} style={{display:"none"}}/>}
+                <button className="btn-portal btn-portal-blue" style={{marginLeft:"auto"}} onClick={()=>setShowUpload(true)}>+ Subir Archivo</button>
+              </div>
+
+              {currentItems.length===0 && <div className="portal-empty"><div style={{fontSize:40,marginBottom:10}}>📂</div>Esta carpeta está vacía</div>}
+
+              <div className="gallery-grid">
+                {currentItems.map(item=>(
+                  <div key={item.id} className="gallery-thumb" onClick={()=>setViewItem(item)}>
+                    {item.type==="foto"
+                      ? <img src={item.url} alt={item.title} onError={e=>e.target.style.display="none"}/>
+                      : <div className="gallery-thumb-video">▶️</div>
+                    }
+                    <div style={{position:"absolute",bottom:0,left:0,right:0,background:"linear-gradient(transparent,rgba(0,0,0,0.65))",padding:"8px",fontSize:11,color:"#fff",fontWeight:500}}>{item.title}</div>
+                  </div>
+                ))}
+              </div>
+            </>;
+          })()}
 
         </div>
       </div>
@@ -1655,10 +1689,13 @@ function EmployeePortal({ user }) {
       {showNewFolder && (
         <div className="modal-overlay-light" onClick={e=>e.target===e.currentTarget&&setShowNewFolder(false)}>
           <div className="modal-light" style={{maxWidth:400}}>
-            <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:18,fontWeight:700,color:"#1a1a2e",marginBottom:16}}>📁 Nueva Carpeta</div>
+            <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:18,fontWeight:700,color:"#1a1a2e",marginBottom:8}}>
+              {activeFolder&&!activeFolder.includes("/")?"📂 Nueva Subcarpeta":"📁 Nueva Carpeta"}
+            </div>
+            {activeFolder&&!activeFolder.includes("/")&&<div style={{fontSize:12,color:"#888",marginBottom:14}}>Se creará dentro de: <strong>{activeFolder}</strong></div>}
             <div className="field-light" style={{marginBottom:16}}>
-              <label>Nombre de la carpeta</label>
-              <input type="text" placeholder="Ej: Apertura Panajachel" value={newFolderName} onChange={e=>setNewFolderName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&createFolder()}/>
+              <label>{activeFolder&&!activeFolder.includes("/")?"Nombre de la subcarpeta":"Nombre de la carpeta"}</label>
+              <input type="text" placeholder={activeFolder&&!activeFolder.includes("/")?"Ej: Fotos del evento":"Ej: Apertura Panajachel"} value={newFolderName} onChange={e=>setNewFolderName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&createFolder()}/>
             </div>
             <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
               <button className="btn-portal btn-portal-ghost" onClick={()=>setShowNewFolder(false)}>Cancelar</button>
@@ -1674,7 +1711,7 @@ function EmployeePortal({ user }) {
           <div className="modal-light" style={{maxWidth:480}}>
             <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:18,fontWeight:700,color:"#1a1a2e",marginBottom:16}}>📤 Subir Archivo</div>
             <div style={{marginBottom:12,padding:"8px 12px",background:`${C.blue}10`,borderRadius:8,fontSize:12,color:C.blue}}>
-              Subiendo a: <strong>{activeFolder||"General"}</strong>
+              Subiendo a: <strong>{activeFolder ? activeFolder.replace("/"," → ") : "General"}</strong>
             </div>
             <div className="field-light" style={{marginBottom:12}}>
               <label>Título *</label>
