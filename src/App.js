@@ -957,4 +957,215 @@ export default function App() {
     {toast && <Toast key={toast.key} msg={toast.msg} type={toast.type} onClose={()=>setToast(null)}/>}
     </>
   );
+
+// ── PORTAL EMPLEADO ──────────────────────────────────────────
+function EmployeePortal({ user }) {
+  const [events, setEvents] = useState([]);
+  const [gallery, setGallery] = useState([]);
+  const [carouselIdx, setCarouselIdx] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      supabase.from("events").select("*").gte("date", new Date().toISOString().slice(0,10)).order("date").limit(6),
+      supabase.from("gallery").select("*").order("created_at", { ascending: false }).limit(12)
+    ]).then(([{ data: ev }, { data: gal }]) => {
+      if (ev) setEvents(ev);
+      if (gal) setGallery(gal);
+      setLoading(false);
+    });
+  }, []);
+
+  const photos = gallery.filter(g => g.type === "foto");
+  const videos = gallery.filter(g => g.type === "video");
+
+  useEffect(() => {
+    if (photos.length <= 1) return;
+    const t = setInterval(() => setCarouselIdx(i => (i + 1) % photos.length), 4000);
+    return () => clearInterval(t);
+  }, [photos.length]);
+
+  const portalCss = `
+    .portal { background: #f0f4f8; min-height: 100vh; font-family: 'Inter', sans-serif; }
+    .portal-topbar { background: #fff; padding: 14px 32px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 8px rgba(0,0,0,0.08); position: sticky; top: 0; z-index: 100; }
+    .portal-brand { font-family: 'Exo 2', sans-serif; font-weight: 900; font-size: 20px; color: #1a1a2e; }
+    .portal-brand span { color: ${C.blue}; }
+    .portal-user { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #555; }
+    .portal-avatar { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, ${C.blue}, ${C.green}); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 13px; }
+    .portal-content { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+    .portal-hero { background: linear-gradient(135deg, ${C.blue} 0%, #0077aa 50%, ${C.green} 100%); border-radius: 20px; padding: 40px 48px; color: #fff; margin-bottom: 32px; position: relative; overflow: hidden; }
+    .portal-hero::before { content: ''; position: absolute; width: 300px; height: 300px; background: rgba(255,255,255,0.06); border-radius: 50%; top: -100px; right: -50px; }
+    .portal-hero::after { content: ''; position: absolute; width: 200px; height: 200px; background: rgba(255,255,255,0.04); border-radius: 50%; bottom: -80px; left: 40px; }
+    .portal-hero h1 { font-family: 'Exo 2', sans-serif; font-size: 28px; font-weight: 900; margin-bottom: 8px; position: relative; z-index: 1; }
+    .portal-hero p { font-size: 15px; opacity: 0.85; position: relative; z-index: 1; }
+    .portal-section-title { font-family: 'Exo 2', sans-serif; font-size: 18px; font-weight: 700; color: #1a1a2e; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+    .carousel-wrap { border-radius: 16px; overflow: hidden; position: relative; height: 320px; background: #ddd; margin-bottom: 32px; box-shadow: 0 4px 24px rgba(0,0,0,0.12); }
+    .carousel-img { width: 100%; height: 100%; object-fit: cover; transition: opacity 0.6s ease; }
+    .carousel-dots { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; }
+    .carousel-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.5); cursor: pointer; transition: all 0.2s; border: none; }
+    .carousel-dot.active { background: #fff; width: 20px; border-radius: 4px; }
+    .carousel-arrows { position: absolute; top: 50%; transform: translateY(-50%); width: 100%; display: flex; justify-content: space-between; padding: 0 12px; pointer-events: none; }
+    .carousel-arrow { width: 36px; height: 36px; background: rgba(255,255,255,0.85); border: none; border-radius: 50%; font-size: 16px; cursor: pointer; pointer-events: all; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,0.15); transition: background 0.15s; }
+    .carousel-arrow:hover { background: #fff; }
+    .carousel-caption { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(transparent, rgba(0,0,0,0.6)); padding: 24px 20px 48px; color: #fff; font-size: 14px; font-weight: 500; }
+    .event-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-bottom: 32px; }
+    .event-card { background: #fff; border-radius: 14px; padding: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); border-left: 4px solid ${C.orange}; transition: transform 0.15s, box-shadow 0.15s; }
+    .event-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.1); }
+    .event-card-date { font-size: 12px; font-weight: 600; color: ${C.orange}; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .event-card-title { font-family: 'Exo 2', sans-serif; font-size: 16px; font-weight: 700; color: #1a1a2e; margin-bottom: 8px; }
+    .event-card-meta { font-size: 12px; color: #888; display: flex; flex-direction: column; gap: 3px; }
+    .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin-bottom: 32px; }
+    .gallery-thumb { border-radius: 10px; overflow: hidden; aspect-ratio: 1; cursor: pointer; position: relative; box-shadow: 0 2px 8px rgba(0,0,0,0.08); transition: transform 0.15s; }
+    .gallery-thumb:hover { transform: scale(1.03); }
+    .gallery-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .gallery-thumb-video { width: 100%; height: 100%; background: linear-gradient(135deg, #1a1a2e, #2d3561); display: flex; align-items: center; justify-content: center; font-size: 32px; }
+    .portal-empty { text-align: center; padding: 40px; color: #aaa; font-size: 14px; }
+    .portal-logout { background: none; border: 1px solid #ddd; border-radius: 8px; padding: 6px 14px; font-size: 13px; color: #888; cursor: pointer; transition: all 0.15s; font-family: 'Inter', sans-serif; }
+    .portal-logout:hover { background: #fee; color: #e55; border-color: #e55; }
+    .modal-overlay-light { position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .modal-light { background: #fff; border-radius: 16px; padding: 28px; width: 100%; max-width: 580px; max-height: 90vh; overflow-y: auto; }
+    .modal-light-title { font-family: 'Exo 2', sans-serif; font-size: 20px; font-weight: 700; color: #1a1a2e; margin-bottom: 16px; }
+    .tag { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+    .tag-blue { background: ${C.blue}18; color: ${C.blue}; }
+    .tag-green { background: ${C.green}18; color: ${C.green}; }
+    .tag-orange { background: ${C.orange}18; color: ${C.orange}; }
+  `;
+
+  const [viewItem, setViewItem] = useState(null);
+
+  if (loading) return (
+    <>
+      <style>{portalCss}</style>
+      <div className="portal" style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <div style={{textAlign:"center",color:"#888"}}>
+          <div className="spinner" style={{borderTopColor:C.blue,margin:"0 auto 12px"}}/>
+          <div>Cargando SomosGTA…</div>
+        </div>
+      </div>
+    </>
+  );
+
+  return (
+    <>
+      <style>{css}</style>
+      <style>{portalCss}</style>
+      <div className="portal">
+        {/* TOPBAR */}
+        <div className="portal-topbar">
+          <div className="portal-brand">Somos<span>GTA</span></div>
+          <div className="portal-user">
+            <div className="portal-avatar">{user.name.split(" ").map(n=>n[0]).join("").slice(0,2)}</div>
+            <span>{user.name}</span>
+          </div>
+        </div>
+
+        <div className="portal-content">
+          {/* HERO */}
+          <div className="portal-hero">
+            <h1>¡Bienvenido, {user.name.split(" ")[0]}! 👋</h1>
+            <p>Grupo de Tiendas Asociadas S.A. — Tu espacio de comunicación interna</p>
+          </div>
+
+          {/* CARRUSEL */}
+          {photos.length > 0 && (
+            <div style={{marginBottom:32}}>
+              <div className="portal-section-title">📸 Galería Destacada</div>
+              <div className="carousel-wrap">
+                <img className="carousel-img" src={photos[carouselIdx]?.url} alt={photos[carouselIdx]?.title} onClick={()=>setViewItem(photos[carouselIdx])}/>
+                <div className="carousel-caption">{photos[carouselIdx]?.title}</div>
+                <div className="carousel-arrows">
+                  <button className="carousel-arrow" onClick={e=>{e.stopPropagation();setCarouselIdx(i=>(i-1+photos.length)%photos.length);}}>‹</button>
+                  <button className="carousel-arrow" onClick={e=>{e.stopPropagation();setCarouselIdx(i=>(i+1)%photos.length);}}>›</button>
+                </div>
+                <div className="carousel-dots">
+                  {photos.map((_,i)=>(
+                    <button key={i} className={`carousel-dot ${i===carouselIdx?"active":""}`} onClick={()=>setCarouselIdx(i)}/>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* EVENTOS */}
+          <div style={{marginBottom:32}}>
+            <div className="portal-section-title">📅 Próximos Eventos</div>
+            {events.length === 0 ? (
+              <div className="portal-empty">No hay eventos próximos programados</div>
+            ) : (
+              <div className="event-cards">
+                {events.map(e=>(
+                  <div key={e.id} className="event-card">
+                    <div className="event-card-date">📅 {e.date}{e.time&&` · ${e.time.slice(0,5)}`}</div>
+                    <div className="event-card-title">{e.title}</div>
+                    <div className="event-card-meta">
+                      {e.location&&<span>📍 {e.location}</span>}
+                      {e.area&&<span>🏢 {e.area}</span>}
+                    </div>
+                    {e.maps_url&&<a href={e.maps_url} target="_blank" rel="noreferrer" style={{display:"inline-block",marginTop:10,fontSize:12,color:C.blue,textDecoration:"none",fontWeight:600}}>🗺️ Ver en Maps</a>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* VIDEOS */}
+          {videos.length > 0 && (
+            <div style={{marginBottom:32}}>
+              <div className="portal-section-title">🎥 Videos</div>
+              <div className="gallery-grid">
+                {videos.map(item=>(
+                  <div key={item.id} className="gallery-thumb" onClick={()=>setViewItem(item)}>
+                    <div className="gallery-thumb-video">▶️</div>
+                    <div style={{position:"absolute",bottom:0,left:0,right:0,background:"linear-gradient(transparent,rgba(0,0,0,0.7))",padding:"8px",fontSize:11,color:"#fff",fontWeight:500}}>{item.title}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* GALERÍA COMPLETA */}
+          {photos.length > 0 && (
+            <div style={{marginBottom:32}}>
+              <div className="portal-section-title">🖼️ Fotos</div>
+              <div className="gallery-grid">
+                {photos.map(item=>(
+                  <div key={item.id} className="gallery-thumb" onClick={()=>setViewItem(item)}>
+                    <img src={item.url} alt={item.title} onError={e=>e.target.style.display="none"}/>
+                    <div style={{position:"absolute",bottom:0,left:0,right:0,background:"linear-gradient(transparent,rgba(0,0,0,0.6))",padding:"8px",fontSize:11,color:"#fff",fontWeight:500,opacity:0,transition:"opacity 0.2s"}}
+                      onMouseEnter={e=>e.currentTarget.style.opacity="1"} onMouseLeave={e=>e.currentTarget.style.opacity="0"}>{item.title}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* FOOTER */}
+          <div style={{textAlign:"center",padding:"20px 0",borderTop:"1px solid #e0e0e0",color:"#bbb",fontSize:12}}>
+            SomosGTA © {new Date().getFullYear()} — Grupo de Tiendas Asociadas S.A.
+            <button className="portal-logout" style={{marginLeft:16}} onClick={async()=>{await supabase.auth.signOut();window.location.reload();}}>Cerrar sesión</button>
+          </div>
+        </div>
+
+        {/* MODAL VER */}
+        {viewItem && (
+          <div className="modal-overlay-light" onClick={e=>e.target===e.currentTarget&&setViewItem(null)}>
+            <div className="modal-light">
+              <div className="modal-light-title">{viewItem.title}</div>
+              {viewItem.type==="foto" ? (
+                <img src={viewItem.url} alt={viewItem.title} style={{width:"100%",borderRadius:10,maxHeight:400,objectFit:"contain"}}/>
+              ) : (
+                <video src={viewItem.url} controls style={{width:"100%",borderRadius:10,maxHeight:360}}/>
+              )}
+              <div style={{marginTop:12,fontSize:12,color:"#999"}}>Subido por {viewItem.uploaded_by_name} · {new Date(viewItem.created_at).toLocaleDateString("es")}</div>
+              <div style={{marginTop:16,textAlign:"right"}}>
+                <button onClick={()=>setViewItem(null)} style={{padding:"8px 20px",background:C.blue,color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:13}}>Cerrar</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 }
