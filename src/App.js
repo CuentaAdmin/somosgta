@@ -1228,8 +1228,10 @@ function EmployeePortal({ user }) {
       if (ev) setEvents(ev);
       if (ann) setAnnouncements(ann);
       if (gal) {
-        setGallery(gal);
-        const fols = [...new Set(gal.map(g=>g.folder).filter(Boolean))];
+        // Empleado solo ve: archivos sin carpeta (General) + sus propios archivos
+        const filtered = gal.filter(g => !g.folder || g.uploaded_by === user.id);
+        setGallery(filtered);
+        const fols = [...new Set(filtered.map(g=>g.folder).filter(Boolean))];
         setFolders(fols);
       }
       if (cfg) setConfig(cfg);
