@@ -1158,6 +1158,484 @@ function AnnouncementsModule({ currentUser }) {
   );
 }
 
+function EmployeePortal({ user }) {
+  const [section, setSection] = useState("inicio");
+  const [events, setEvents] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
+  const [gallery, setGallery] = useState([]);
+  const [folders, setFolders] = useState([]);
+  const [activeFolder, setActiveFolder] = useState(null);
+  const [carouselIdx, setCarouselIdx] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [showNewFolder, setShowNewFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [showUpload, setShowUpload] = useState(false);
+  const [uploadForm, setUploadForm] = useState({ title:"", type:"foto", file:null });
+  const [viewItem, setViewItem] = useState(null);
+  const [selectedAnn, setSelectedAnn] = useState(null);
+  const [calYear, setCalYear] = useState(new Date().getFullYear());
+  const [calMonth, setCalMonth] = useState(new Date().getMonth());
+  const [upToast, setUpToast] = useState(null);
+  const showUpToast = (msg, type="info") => setUpToast({ msg, type, key: Date.now() });
+  const [config, setConfig] = useState({
+    hero_title:"¡Bienvenido a SomosGTA!", hero_subtitle:"Grupo de Tiendas Asociadas S.A.",
+    hero_color_start:"#00aeef", hero_color_end:"#60bb46", hero_bg_image:"",
+    show_events:true, show_photos:true, show_videos:true,
+    footer_text:"SomosGTA © Grupo de Tiendas Asociadas S.A."
+  });
+
+  useEffect(() => {
+    Promise.all([
+      supabase.from("events").select("*").order("date"),
+      supabase.from("announcements").select("*").gt("expires_at", new Date().toISOString()).order("created_at",{ascending:false}),
+      supabase.from("gallery").select("*").order("created_at",{ascending:false}),
+      supabase.from("portal_config").select("*").eq("id",1).single()
+    ]).then(([{data:ev},{data:ann},{data:gal},{data:cfg}]) => {
+      if (ev) setEvents(ev);
+      if (ann) setAnnouncements(ann);
+      if (gal) {
+        setGallery(gal);
+        const fols = [...new Set(gal.map(g=>g.folder).filter(Boolean))];
+        setFolders(fols);
+      }
+      if (cfg) setConfig(cfg);
+      setLoading(false);
+    });
+  }, []);
+
+  const photos = gallery.filter(g => g.type === "foto");
+  const upcomingEvents = events.filter(e => new Date(e.date) >= new Date(new Date().toDateString()));
+
+  useEffect(() => {
+    if (photos.length <= 1) return;
+    const t = setInterval(() => setCarouselIdx(i => (i+1) % photos.length), 4000);
+    return () => clearInterval(t);
+  }, [photos.length]);
+
+  // Calendar helpers
+  const firstDay = new Date(calYear, calMonth, 1).getDay();
+  const daysInMonth = new Date(calYear, calMonth+1, 0).getDate();
+  const today = new Date();
+  const eventDates = events.reduce((acc,e) => {
+    const d = e.date?.slice(0,10);
+    if (d) { if (!acc[d]) acc[d]=[]; acc[d].push(e); }
+    return acc;
+  }, {});
+
+  const createFolder = () => {
+    if (!newFolderName.trim()) return;
+    const name = newFolderName.trim();
+    if (!folders.includes(name)) setFolders(f => [...f, name]);
+    setActiveFolder(name);
+    setNewFolderName("");
+    setShowNewFolder(false);
+  };
+
+  const handleUpload = async () => {
+    if (!uploadForm.title || !uploadForm.file) { showUpToast("Completa todos los campos","error"); return; }
+    const maxSize = uploadForm.type === "foto" ? 10*1024*1024 : 50*1024*1024;
+    const maxLabel = uploadForm.type === "foto" ? "10MB" : "50MB";
+    if (uploadForm.file.size > maxSize) { showUpToast(`El archivo supera el límite de ${maxLabel}`,"error"); return; }
+    setUploading(true);
+    const ext = uploadForm.file.name.split(".").pop();
+    const filename = `${Date.now()}.${ext}`;
+    const { error: upErr } = await supabase.storage.from("gallery").upload(filename, uploadForm.file);
+    if (upErr) { showUpToast("Error al subir: "+upErr.message,"error"); setUploading(false); return; }
+    const { data: urlData } = supabase.storage.from("gallery").getPublicUrl(filename);
+    const { data, error } = await supabase.from("gallery").insert({
+      title: uploadForm.title, type: uploadForm.type, url: urlData.publicUrl,
+      folder: activeFolder || null, uploaded_by: user.id, uploaded_by_name: user.name
+    }).select().single();
+    if (error) { showUpToast("Error al guardar","error"); setUploading(false); return; }
+    setGallery(g => [data, ...g]);
+    if (activeFolder && !folders.includes(activeFolder)) setFolders(f=>[...f,activeFolder]);
+    showUpToast("Archivo subido","success");
+    setShowUpload(false);
+    setUploadForm({ title:"", type:"foto", file:null });
+    setUploading(false);
+  };
+
+  const folderItems = activeFolder ? gallery.filter(g=>g.folder===activeFolder) : gallery.filter(g=>!g.folder);
+  const priorityConfig = {
+    urgente:     { color:"#ff4d4d", bg:"#ff4d4d15", label:"🚨 Urgente" },
+    normal:      { color:C.blue,    bg:`${C.blue}15`, label:"📢 Normal" },
+    informativo: { color:C.green,   bg:`${C.green}15`, label:"ℹ️ Informativo" }
+  };
+
+  const portalCss = `
+    .portal { display:flex; min-height:100vh; background:#f0f4f8; font-family:'Inter',sans-serif; }
+    .portal-sidebar { width:220px; min-width:220px; background:#fff; border-right:1px solid #e8edf2; display:flex; flex-direction:column; position:fixed; top:0; left:0; bottom:0; box-shadow:2px 0 12px rgba(0,0,0,0.06); z-index:100; }
+    .portal-sidebar-brand { padding:20px 16px; border-bottom:1px solid #e8edf2; display:flex; align-items:center; gap:10px; }
+    .portal-sidebar-title { font-family:'Exo 2',sans-serif; font-weight:900; font-size:18px; color:#1a1a2e; }
+    .portal-sidebar-title span { color:${C.blue}; }
+    .portal-nav { padding:12px 8px; flex:1; }
+    .portal-nav-item { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:10px; cursor:pointer; font-size:14px; color:#666; margin-bottom:4px; border:none; background:none; width:100%; text-align:left; transition:all 0.15s; }
+    .portal-nav-item:hover { background:#f0f4f8; color:#1a1a2e; }
+    .portal-nav-item.active { background:${C.blue}15; color:${C.blue}; font-weight:600; }
+    .portal-nav-icon { font-size:16px; width:20px; text-align:center; }
+    .portal-sidebar-footer { padding:14px 12px; border-top:1px solid #e8edf2; }
+    .portal-user-chip { display:flex; align-items:center; gap:8px; padding:10px 12px; border-radius:10px; background:#f5f7fa; }
+    .portal-avatar { width:32px; height:32px; border-radius:50%; background:linear-gradient(135deg,${C.blue},${C.green}); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:12px; flex-shrink:0; }
+    .portal-main { margin-left:220px; flex:1; display:flex; flex-direction:column; }
+    .portal-topbar { background:#fff; padding:14px 28px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #e8edf2; position:sticky; top:0; z-index:50; }
+    .portal-section-heading { font-family:'Exo 2',sans-serif; font-size:20px; font-weight:700; color:#1a1a2e; }
+    .portal-content { padding:28px; flex:1; }
+    .portal-hero { border-radius:18px; padding:36px 44px; color:#fff; margin-bottom:28px; position:relative; overflow:hidden; }
+    .portal-hero h1 { font-family:'Exo 2',sans-serif; font-size:26px; font-weight:900; margin-bottom:6px; position:relative; z-index:1; }
+    .portal-hero p { font-size:14px; opacity:0.88; position:relative; z-index:1; }
+    .portal-section-title { font-family:'Exo 2',sans-serif; font-size:16px; font-weight:700; color:#1a1a2e; margin-bottom:14px; display:flex; align-items:center; gap:8px; }
+    .carousel-wrap { border-radius:14px; overflow:hidden; position:relative; height:280px; background:#ddd; margin-bottom:28px; box-shadow:0 4px 20px rgba(0,0,0,0.1); }
+    .carousel-img { width:100%; height:100%; object-fit:cover; }
+    .carousel-dots { position:absolute; bottom:14px; left:50%; transform:translateX(-50%); display:flex; gap:6px; }
+    .carousel-dot { width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,0.5); cursor:pointer; border:none; transition:all 0.2s; }
+    .carousel-dot.active { background:#fff; width:18px; border-radius:4px; }
+    .carousel-arrows { position:absolute; top:50%; transform:translateY(-50%); width:100%; display:flex; justify-content:space-between; padding:0 10px; pointer-events:none; }
+    .carousel-arrow { width:34px; height:34px; background:rgba(255,255,255,0.85); border:none; border-radius:50%; font-size:16px; cursor:pointer; pointer-events:all; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px rgba(0,0,0,0.15); }
+    .carousel-caption { position:absolute; bottom:0; left:0; right:0; background:linear-gradient(transparent,rgba(0,0,0,0.6)); padding:20px 18px 42px; color:#fff; font-size:13px; font-weight:500; }
+    .event-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:14px; margin-bottom:28px; }
+    .event-card { background:#fff; border-radius:12px; padding:18px; box-shadow:0 2px 10px rgba(0,0,0,0.06); border-left:4px solid ${C.orange}; transition:transform 0.15s,box-shadow 0.15s; }
+    .event-card:hover { transform:translateY(-2px); box-shadow:0 6px 18px rgba(0,0,0,0.1); }
+    .ann-card { background:#fff; border-radius:12px; padding:18px 20px; margin-bottom:12px; box-shadow:0 2px 10px rgba(0,0,0,0.06); cursor:pointer; display:flex; gap:14px; align-items:flex-start; transition:box-shadow 0.15s; }
+    .ann-card:hover { box-shadow:0 6px 18px rgba(0,0,0,0.1); }
+    .ann-priority-bar { width:4px; border-radius:4px; flex-shrink:0; align-self:stretch; }
+    .gallery-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
+    .gallery-thumb { border-radius:10px; overflow:hidden; aspect-ratio:1; cursor:pointer; position:relative; box-shadow:0 2px 8px rgba(0,0,0,0.08); transition:transform 0.15s; }
+    .gallery-thumb:hover { transform:scale(1.03); }
+    .gallery-thumb img { width:100%; height:100%; object-fit:cover; }
+    .gallery-thumb-video { width:100%; height:100%; background:linear-gradient(135deg,#1a1a2e,#2d3561); display:flex; align-items:center; justify-content:center; font-size:30px; }
+    .folder-chip { display:flex; align-items:center; gap:6px; padding:8px 14px; border-radius:8px; cursor:pointer; font-size:13px; font-weight:500; border:2px solid #e8edf2; background:#fff; transition:all 0.15s; color:#555; }
+    .folder-chip.active { border-color:${C.blue}; background:${C.blue}15; color:${C.blue}; }
+    .folder-chip:hover { border-color:${C.blue}; }
+    .portal-empty { text-align:center; padding:40px; color:#aaa; font-size:14px; }
+    .portal-logout { background:none; border:1px solid #e0e0e0; border-radius:8px; padding:6px 12px; font-size:12px; color:#999; cursor:pointer; transition:all 0.15s; }
+    .portal-logout:hover { background:#fee2e2; color:#ef4444; border-color:#ef4444; }
+    .modal-overlay-light { position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:200; display:flex; align-items:center; justify-content:center; padding:20px; }
+    .modal-light { background:#fff; border-radius:16px; padding:28px; width:100%; max-width:580px; max-height:90vh; overflow-y:auto; }
+    .field-light label { display:block; font-size:12px; font-weight:600; color:#888; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.6px; }
+    .field-light input,.field-light select,.field-light textarea { width:100%; border:1.5px solid #e8edf2; border-radius:10px; padding:11px 14px; font-size:14px; color:#1a1a2e; outline:none; font-family:'Inter',sans-serif; transition:border-color 0.2s; background:#fff; }
+    .field-light input:focus,.field-light select:focus { border-color:${C.blue}; }
+    .upload-zone-light { border:2px dashed #d0dae4; border-radius:12px; padding:28px; text-align:center; cursor:pointer; transition:all 0.2s; }
+    .upload-zone-light:hover { border-color:${C.blue}; background:${C.blue}08; }
+    .btn-portal { padding:10px 20px; border-radius:10px; font-size:13px; font-weight:600; cursor:pointer; border:none; font-family:'Exo 2',sans-serif; transition:all 0.15s; }
+    .btn-portal-blue { background:${C.blue}; color:#fff; }
+    .btn-portal-blue:hover { background:#0099d4; }
+    .btn-portal-ghost { background:#f5f7fa; color:#555; border:1px solid #e8edf2; }
+    .btn-portal-ghost:hover { background:#eef0f4; }
+    .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
+    .cal-cell { aspect-ratio:1; display:flex; flex-direction:column; align-items:center; justify-content:center; border-radius:8px; cursor:default; }
+    .cal-cell.has-event { cursor:pointer; background:${C.orange}15; }
+    .cal-cell.is-today { background:${C.blue}20; border:1.5px solid ${C.blue}; }
+  `;
+
+  const sectionTitles = { inicio:"Inicio", events:"Eventos", announcements:"Anuncios", gallery:"Mi Galería" };
+
+  if (loading) return (
+    <><style>{portalCss}</style>
+    <div className="portal" style={{alignItems:"center",justifyContent:"center",display:"flex"}}>
+      <div style={{textAlign:"center",color:"#888"}}><div className="spinner" style={{borderTopColor:C.blue,margin:"0 auto 12px"}}/><div>Cargando…</div></div>
+    </div></>
+  );
+
+  return (
+    <><style>{css}</style><style>{portalCss}</style>
+    <div className="portal">
+      {/* SIDEBAR */}
+      <aside className="portal-sidebar">
+        <div className="portal-sidebar-brand">
+          <Logo size={32}/>
+          <div className="portal-sidebar-title">Somos<span>GTA</span></div>
+        </div>
+        <nav className="portal-nav">
+          {[
+            {id:"inicio",icon:"⊞",label:"Inicio"},
+            {id:"announcements",icon:"📢",label:"Anuncios", badge: announcements.filter(a=>a.priority==="urgente").length||null},
+            {id:"events",icon:"📅",label:"Eventos"},
+            {id:"gallery",icon:"🖼️",label:"Mi Galería"},
+          ].map(item=>(
+            <button key={item.id} className={`portal-nav-item ${section===item.id?"active":""}`} onClick={()=>setSection(item.id)}>
+              <span className="portal-nav-icon">{item.icon}</span>
+              <span style={{flex:1}}>{item.label}</span>
+              {item.badge>0 && <span style={{background:"#ff4d4d",color:"#fff",fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{item.badge}</span>}
+            </button>
+          ))}
+        </nav>
+        <div className="portal-sidebar-footer">
+          <div className="portal-user-chip">
+            <div className="portal-avatar">{user.name.split(" ").map(n=>n[0]).join("").slice(0,2)}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:12,fontWeight:600,color:"#1a1a2e",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user.name}</div>
+              <div style={{fontSize:11,color:"#aaa"}}>Empleado</div>
+            </div>
+            <button className="portal-logout" onClick={async()=>{await supabase.auth.signOut();window.location.reload();}}>⏻</button>
+          </div>
+        </div>
+      </aside>
+
+      {/* MAIN */}
+      <div className="portal-main">
+        <div className="portal-topbar">
+          <div className="portal-section-heading">{sectionTitles[section]}</div>
+          <div style={{fontSize:13,color:"#888"}}>Bienvenido, <strong style={{color:"#1a1a2e"}}>{user.name.split(" ")[0]}</strong></div>
+        </div>
+
+        <div className="portal-content">
+
+          {/* ── INICIO ── */}
+          {section === "inicio" && <>
+            <div className="portal-hero" style={{background:`linear-gradient(135deg,${config.hero_color_start},${config.hero_color_end})`,backgroundImage:config.hero_bg_image?`url(${config.hero_bg_image})`:"none",backgroundSize:"cover",backgroundPosition:"center"}}>
+              <div style={{position:"absolute",inset:0,background:`linear-gradient(135deg,${config.hero_color_start}cc,${config.hero_color_end}cc)`,borderRadius:18}}/>
+              <h1>{config.hero_title} 👋</h1>
+              <p>{config.hero_subtitle}</p>
+            </div>
+
+            {photos.length > 0 && (
+              <div style={{marginBottom:28}}>
+                <div className="portal-section-title">📸 Galería Destacada</div>
+                <div className="carousel-wrap">
+                  <img className="carousel-img" src={photos[carouselIdx]?.url} alt={photos[carouselIdx]?.title}/>
+                  <div className="carousel-caption">{photos[carouselIdx]?.title}</div>
+                  <div className="carousel-arrows">
+                    <button className="carousel-arrow" onClick={()=>setCarouselIdx(i=>(i-1+photos.length)%photos.length)}>‹</button>
+                    <button className="carousel-arrow" onClick={()=>setCarouselIdx(i=>(i+1)%photos.length)}>›</button>
+                  </div>
+                  <div className="carousel-dots">{photos.map((_,i)=><button key={i} className={`carousel-dot ${i===carouselIdx?"active":""}`} onClick={()=>setCarouselIdx(i)}/>)}</div>
+                </div>
+              </div>
+            )}
+
+            {announcements.length > 0 && (
+              <div style={{marginBottom:28}}>
+                <div className="portal-section-title">📢 Últimos Anuncios</div>
+                {announcements.slice(0,3).map(a=>{
+                  const pc = priorityConfig[a.priority]||priorityConfig.normal;
+                  return (
+                    <div key={a.id} className="ann-card" onClick={()=>{setSelectedAnn(a);setSection("announcements");}}>
+                      <div className="ann-priority-bar" style={{background:pc.color}}/>
+                      <div style={{flex:1}}>
+                        <div style={{display:"flex",gap:8,marginBottom:6,flexWrap:"wrap"}}>
+                          <span style={{background:pc.bg,color:pc.color,padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:600}}>{pc.label}</span>
+                          {a.area&&<span style={{background:`${C.green}15`,color:C.green,padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:600}}>🏢 {a.area}</span>}
+                        </div>
+                        <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:15,fontWeight:700,color:"#1a1a2e",marginBottom:4}}>{a.title}</div>
+                        <div style={{fontSize:12,color:"#888",overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{a.content}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {upcomingEvents.length > 0 && (
+              <div style={{marginBottom:28}}>
+                <div className="portal-section-title">📅 Próximos Eventos</div>
+                <div className="event-cards">
+                  {upcomingEvents.slice(0,3).map(e=>(
+                    <div key={e.id} className="event-card">
+                      <div style={{fontSize:11,fontWeight:600,color:C.orange,marginBottom:4}}>{e.date}{e.time&&` · ${e.time.slice(0,5)}`}</div>
+                      <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:15,fontWeight:700,color:"#1a1a2e",marginBottom:6}}>{e.title}</div>
+                      <div style={{fontSize:11,color:"#888"}}>{e.location&&`📍 ${e.location}`}</div>
+                      {e.maps_url&&<a href={e.maps_url} target="_blank" rel="noreferrer" style={{fontSize:11,color:C.blue,textDecoration:"none",fontWeight:600,marginTop:6,display:"inline-block"}}>🗺️ Ver en Maps</a>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div style={{textAlign:"center",padding:"20px 0",borderTop:"1px solid #e8edf2",color:"#ccc",fontSize:12}}>{config.footer_text}</div>
+          </>}
+
+          {/* ── ANUNCIOS ── */}
+          {section === "announcements" && <>
+            {announcements.length === 0 && <div className="portal-empty"><div style={{fontSize:40,marginBottom:10}}>📢</div>No hay anuncios activos</div>}
+            {announcements.map(a=>{
+              const pc = priorityConfig[a.priority]||priorityConfig.normal;
+              return (
+                <div key={a.id} className="ann-card" onClick={()=>setSelectedAnn(a)}>
+                  <div className="ann-priority-bar" style={{background:pc.color}}/>
+                  <div style={{flex:1}}>
+                    <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap",alignItems:"center"}}>
+                      <span style={{background:pc.bg,color:pc.color,padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:600}}>{pc.label}</span>
+                      {a.area&&<span style={{background:`${C.green}15`,color:C.green,padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:600}}>🏢 {a.area}</span>}
+                      <span style={{fontSize:11,color:"#aaa",marginLeft:"auto"}}>Vence: {new Date(a.expires_at).toLocaleDateString("es")}</span>
+                    </div>
+                    {a.image_url&&<img src={a.image_url} alt={a.title} style={{width:"100%",height:140,objectFit:"cover",borderRadius:8,marginBottom:10}} onError={e=>e.target.style.display="none"}/>}
+                    <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:16,fontWeight:700,color:"#1a1a2e",marginBottom:6}}>{a.title}</div>
+                    <div style={{fontSize:13,color:"#666",lineHeight:1.6,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:3,WebkitBoxOrient:"vertical"}}>{a.content}</div>
+                    <div style={{fontSize:11,color:"#aaa",marginTop:8}}>Por {a.created_by_name} · {new Date(a.created_at).toLocaleDateString("es")}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </>}
+
+          {/* ── EVENTOS ── */}
+          {section === "events" && <>
+            <div className="table-card" style={{background:"#fff",border:"1px solid #e8edf2",marginBottom:20}}>
+              <div style={{padding:"14px 18px",borderBottom:"1px solid #e8edf2",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <button className="btn-portal btn-portal-ghost" onClick={()=>{if(calMonth===0){setCalMonth(11);setCalYear(y=>y-1);}else setCalMonth(m=>m-1);}}>‹</button>
+                <span style={{fontFamily:"'Exo 2',sans-serif",fontWeight:700,fontSize:16,color:"#1a1a2e"}}>{MONTHS[calMonth]} {calYear}</span>
+                <button className="btn-portal btn-portal-ghost" onClick={()=>{if(calMonth===11){setCalMonth(0);setCalYear(y=>y+1);}else setCalMonth(m=>m+1);}}>›</button>
+              </div>
+              <div style={{padding:16}}>
+                <div className="cal-grid" style={{marginBottom:8}}>
+                  {DAYS.map(d=><div key={d} style={{textAlign:"center",fontSize:11,fontWeight:600,color:"#aaa",padding:"4px 0"}}>{d}</div>)}
+                </div>
+                <div className="cal-grid">
+                  {Array.from({length:firstDay}).map((_,i)=><div key={"e"+i}/>)}
+                  {Array.from({length:daysInMonth}).map((_,i)=>{
+                    const day=i+1;
+                    const ds=`${calYear}-${String(calMonth+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+                    const hasEv=eventDates[ds];
+                    const isToday=day===today.getDate()&&calMonth===today.getMonth()&&calYear===today.getFullYear();
+                    return (
+                      <div key={day} className={`cal-cell ${isToday?"is-today":""} ${hasEv?"has-event":""}`}>
+                        <span style={{fontSize:13,fontWeight:isToday?700:400,color:isToday?C.blue:"#1a1a2e"}}>{day}</span>
+                        {hasEv&&<span style={{width:5,height:5,borderRadius:"50%",background:C.orange,display:"block",marginTop:1}}/>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+            <div className="portal-section-title">Próximos Eventos</div>
+            {upcomingEvents.length===0&&<div className="portal-empty">No hay eventos próximos</div>}
+            <div className="event-cards">
+              {upcomingEvents.map(e=>(
+                <div key={e.id} className="event-card">
+                  <div style={{fontSize:11,fontWeight:600,color:C.orange,marginBottom:4}}>{e.date}{e.time&&` · ${e.time.slice(0,5)}`}</div>
+                  <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:15,fontWeight:700,color:"#1a1a2e",marginBottom:6}}>{e.title}</div>
+                  {e.description&&<div style={{fontSize:12,color:"#888",marginBottom:6,lineHeight:1.5}}>{e.description}</div>}
+                  <div style={{fontSize:11,color:"#888"}}>{e.location&&`📍 ${e.location}`}{e.area&&` · 🏢 ${e.area}`}</div>
+                  {e.maps_url&&<a href={e.maps_url} target="_blank" rel="noreferrer" style={{fontSize:12,color:C.blue,textDecoration:"none",fontWeight:600,marginTop:8,display:"inline-flex",alignItems:"center",gap:4}}>🗺️ Ver en Google Maps</a>}
+                </div>
+              ))}
+            </div>
+          </>}
+
+          {/* ── GALERÍA ── */}
+          {section === "gallery" && <>
+            <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
+              <button className={`folder-chip ${!activeFolder?"active":""}`} onClick={()=>setActiveFolder(null)}>📁 General</button>
+              {folders.map(f=>(
+                <button key={f} className={`folder-chip ${activeFolder===f?"active":""}`} onClick={()=>setActiveFolder(f)}>📂 {f}</button>
+              ))}
+              <button className="folder-chip" onClick={()=>setShowNewFolder(true)} style={{borderStyle:"dashed"}}>+ Nueva Carpeta</button>
+              <button className="btn-portal btn-portal-blue" style={{marginLeft:"auto"}} onClick={()=>setShowUpload(true)}>+ Subir Archivo</button>
+            </div>
+
+            {folderItems.length===0 && <div className="portal-empty"><div style={{fontSize:40,marginBottom:10}}>📂</div>Esta carpeta está vacía</div>}
+
+            <div className="gallery-grid">
+              {folderItems.map(item=>(
+                <div key={item.id} className="gallery-thumb" onClick={()=>setViewItem(item)}>
+                  {item.type==="foto"
+                    ? <img src={item.url} alt={item.title} onError={e=>e.target.style.display="none"}/>
+                    : <div className="gallery-thumb-video">▶️</div>
+                  }
+                  <div style={{position:"absolute",bottom:0,left:0,right:0,background:"linear-gradient(transparent,rgba(0,0,0,0.65))",padding:"8px",fontSize:11,color:"#fff",fontWeight:500}}>{item.title}</div>
+                </div>
+              ))}
+            </div>
+          </>}
+
+        </div>
+      </div>
+
+      {/* MODAL ANUNCIO */}
+      {selectedAnn && (
+        <div className="modal-overlay-light" onClick={e=>e.target===e.currentTarget&&setSelectedAnn(null)}>
+          <div className="modal-light">
+            {selectedAnn.image_url&&<img src={selectedAnn.image_url} alt={selectedAnn.title} style={{width:"100%",height:180,objectFit:"cover",borderRadius:10,marginBottom:16}} onError={e=>e.target.style.display="none"}/>}
+            <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+              <span style={{background:priorityConfig[selectedAnn.priority]?.bg,color:priorityConfig[selectedAnn.priority]?.color,padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:600}}>{priorityConfig[selectedAnn.priority]?.label}</span>
+              {selectedAnn.area&&<span style={{background:`${C.green}15`,color:C.green,padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:600}}>🏢 {selectedAnn.area}</span>}
+            </div>
+            <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:20,fontWeight:700,color:"#1a1a2e",marginBottom:12}}>{selectedAnn.title}</div>
+            <div style={{fontSize:14,color:"#555",lineHeight:1.8,marginBottom:16,whiteSpace:"pre-wrap"}}>{selectedAnn.content}</div>
+            <div style={{fontSize:12,color:"#aaa",borderTop:"1px solid #eee",paddingTop:12}}>Por {selectedAnn.created_by_name} · Vence: {new Date(selectedAnn.expires_at).toLocaleString("es")}</div>
+            <div style={{marginTop:16,textAlign:"right"}}><button className="btn-portal btn-portal-ghost" onClick={()=>setSelectedAnn(null)}>Cerrar</button></div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL VER MEDIA */}
+      {viewItem && (
+        <div className="modal-overlay-light" onClick={e=>e.target===e.currentTarget&&setViewItem(null)}>
+          <div className="modal-light" style={{maxWidth:640}}>
+            <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:18,fontWeight:700,color:"#1a1a2e",marginBottom:14}}>{viewItem.title}</div>
+            {viewItem.type==="foto"
+              ? <img src={viewItem.url} alt={viewItem.title} style={{width:"100%",borderRadius:10,maxHeight:400,objectFit:"contain",background:"#f5f5f5"}}/>
+              : <video src={viewItem.url} controls style={{width:"100%",borderRadius:10,maxHeight:360}}/>
+            }
+            <div style={{marginTop:10,fontSize:12,color:"#aaa"}}>Subido por {viewItem.uploaded_by_name} · {new Date(viewItem.created_at).toLocaleDateString("es")}</div>
+            <div style={{marginTop:14,textAlign:"right"}}><button className="btn-portal btn-portal-ghost" onClick={()=>setViewItem(null)}>Cerrar</button></div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL NUEVA CARPETA */}
+      {showNewFolder && (
+        <div className="modal-overlay-light" onClick={e=>e.target===e.currentTarget&&setShowNewFolder(false)}>
+          <div className="modal-light" style={{maxWidth:400}}>
+            <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:18,fontWeight:700,color:"#1a1a2e",marginBottom:16}}>📁 Nueva Carpeta</div>
+            <div className="field-light" style={{marginBottom:16}}>
+              <label>Nombre de la carpeta</label>
+              <input type="text" placeholder="Ej: Apertura Panajachel" value={newFolderName} onChange={e=>setNewFolderName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&createFolder()}/>
+            </div>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+              <button className="btn-portal btn-portal-ghost" onClick={()=>setShowNewFolder(false)}>Cancelar</button>
+              <button className="btn-portal btn-portal-blue" onClick={createFolder}>Crear Carpeta</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL SUBIR ARCHIVO */}
+      {showUpload && (
+        <div className="modal-overlay-light" onClick={e=>e.target===e.currentTarget&&setShowUpload(false)}>
+          <div className="modal-light" style={{maxWidth:480}}>
+            <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:18,fontWeight:700,color:"#1a1a2e",marginBottom:16}}>📤 Subir Archivo</div>
+            <div style={{marginBottom:12,padding:"8px 12px",background:`${C.blue}10`,borderRadius:8,fontSize:12,color:C.blue}}>
+              Subiendo a: <strong>{activeFolder||"General"}</strong>
+            </div>
+            <div className="field-light" style={{marginBottom:12}}>
+              <label>Título *</label>
+              <input type="text" placeholder="Describe este archivo" value={uploadForm.title} onChange={e=>setUploadForm(f=>({...f,title:e.target.value}))}/>
+            </div>
+            <div className="field-light" style={{marginBottom:12}}>
+              <label>Tipo</label>
+              <select value={uploadForm.type} onChange={e=>setUploadForm(f=>({...f,type:e.target.value,file:null}))}>
+                <option value="foto">📷 Foto</option>
+                <option value="video">🎥 Video</option>
+              </select>
+            </div>
+            <div className="field-light" style={{marginBottom:12}}>
+              <label>{uploadForm.type==="foto"?"Imagen (JPG, PNG — máx 10MB)":"Video (MP4, MOV — máx 50MB)"}</label>
+              <label className="upload-zone-light" style={{display:"block"}}>
+                <input type="file" accept={uploadForm.type==="foto"?"image/*":"video/*"} style={{display:"none"}} onChange={e=>setUploadForm(f=>({...f,file:e.target.files[0]}))}/>
+                <div style={{fontSize:28,marginBottom:8}}>{uploadForm.file?"✅":uploadForm.type==="foto"?"📷":"🎥"}</div>
+                <div style={{fontSize:13,color:"#888"}}>{uploadForm.file?uploadForm.file.name:"Clic para seleccionar"}</div>
+              </label>
+            </div>
+            <div style={{fontSize:11,color:"#f7921d",padding:"8px 12px",background:"#f7921d10",borderRadius:8,marginBottom:16}}>
+              ⚠️ Archivos permanentes — no se pueden eliminar después de subir
+            </div>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+              <button className="btn-portal btn-portal-ghost" onClick={()=>setShowUpload(false)}>Cancelar</button>
+              <button className="btn-portal btn-portal-blue" onClick={handleUpload} disabled={uploading}>{uploading?"Subiendo…":"Subir Archivo"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {upToast && <Toast key={upToast.key} msg={upToast.msg} type={upToast.type} onClose={()=>setUpToast(null)}/>}
+    </div>
+    </>
+  );
+}
+
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [users, setUsers] = useState([]);
@@ -1229,227 +1707,4 @@ export default function App() {
     {toast && <Toast key={toast.key} msg={toast.msg} type={toast.type} onClose={()=>setToast(null)}/>}
     </>
   );
-
-// ── PORTAL EMPLEADO ──────────────────────────────────────────
-function EmployeePortal({ user }) {
-  const [events, setEvents] = useState([]);
-  const [gallery, setGallery] = useState([]);
-  const [carouselIdx, setCarouselIdx] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [config, setConfig] = useState({
-    hero_title:"¡Bienvenido a SomosGTA!",
-    hero_subtitle:"Grupo de Tiendas Asociadas S.A. — Tu espacio de comunicación interna",
-    hero_color_start:"#00aeef", hero_color_end:"#60bb46", hero_bg_image:"",
-    show_events:true, show_photos:true, show_videos:true,
-    footer_text:"SomosGTA © Grupo de Tiendas Asociadas S.A."
-  });
-
-  useEffect(() => {
-    Promise.all([
-      supabase.from("events").select("*").gte("date", new Date().toISOString().slice(0,10)).order("date").limit(6),
-      supabase.from("gallery").select("*").order("created_at", { ascending: false }).limit(12),
-      supabase.from("portal_config").select("*").eq("id",1).single()
-    ]).then(([{ data: ev }, { data: gal }, { data: cfg }]) => {
-      if (ev) setEvents(ev);
-      if (gal) setGallery(gal);
-      if (cfg) setConfig(cfg);
-      setLoading(false);
-    });
-  }, []);
-
-  const photos = gallery.filter(g => g.type === "foto");
-  const videos = gallery.filter(g => g.type === "video");
-
-  useEffect(() => {
-    if (photos.length <= 1) return;
-    const t = setInterval(() => setCarouselIdx(i => (i + 1) % photos.length), 4000);
-    return () => clearInterval(t);
-  }, [photos.length]);
-
-  const portalCss = `
-    .portal { background: #f0f4f8; min-height: 100vh; font-family: 'Inter', sans-serif; }
-    .portal-topbar { background: #fff; padding: 14px 32px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 8px rgba(0,0,0,0.08); position: sticky; top: 0; z-index: 100; }
-    .portal-brand { font-family: 'Exo 2', sans-serif; font-weight: 900; font-size: 20px; color: #1a1a2e; }
-    .portal-brand span { color: ${C.blue}; }
-    .portal-user { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #555; }
-    .portal-avatar { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, ${C.blue}, ${C.green}); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 13px; }
-    .portal-content { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
-    .portal-hero { background: linear-gradient(135deg, ${C.blue} 0%, #0077aa 50%, ${C.green} 100%); border-radius: 20px; padding: 40px 48px; color: #fff; margin-bottom: 32px; position: relative; overflow: hidden; }
-    .portal-hero::before { content: ''; position: absolute; width: 300px; height: 300px; background: rgba(255,255,255,0.06); border-radius: 50%; top: -100px; right: -50px; }
-    .portal-hero::after { content: ''; position: absolute; width: 200px; height: 200px; background: rgba(255,255,255,0.04); border-radius: 50%; bottom: -80px; left: 40px; }
-    .portal-hero h1 { font-family: 'Exo 2', sans-serif; font-size: 28px; font-weight: 900; margin-bottom: 8px; position: relative; z-index: 1; }
-    .portal-hero p { font-size: 15px; opacity: 0.85; position: relative; z-index: 1; }
-    .portal-section-title { font-family: 'Exo 2', sans-serif; font-size: 18px; font-weight: 700; color: #1a1a2e; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
-    .carousel-wrap { border-radius: 16px; overflow: hidden; position: relative; height: 320px; background: #ddd; margin-bottom: 32px; box-shadow: 0 4px 24px rgba(0,0,0,0.12); }
-    .carousel-img { width: 100%; height: 100%; object-fit: cover; transition: opacity 0.6s ease; }
-    .carousel-dots { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; }
-    .carousel-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.5); cursor: pointer; transition: all 0.2s; border: none; }
-    .carousel-dot.active { background: #fff; width: 20px; border-radius: 4px; }
-    .carousel-arrows { position: absolute; top: 50%; transform: translateY(-50%); width: 100%; display: flex; justify-content: space-between; padding: 0 12px; pointer-events: none; }
-    .carousel-arrow { width: 36px; height: 36px; background: rgba(255,255,255,0.85); border: none; border-radius: 50%; font-size: 16px; cursor: pointer; pointer-events: all; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,0.15); transition: background 0.15s; }
-    .carousel-arrow:hover { background: #fff; }
-    .carousel-caption { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(transparent, rgba(0,0,0,0.6)); padding: 24px 20px 48px; color: #fff; font-size: 14px; font-weight: 500; }
-    .event-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-bottom: 32px; }
-    .event-card { background: #fff; border-radius: 14px; padding: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); border-left: 4px solid ${C.orange}; transition: transform 0.15s, box-shadow 0.15s; }
-    .event-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.1); }
-    .event-card-date { font-size: 12px; font-weight: 600; color: ${C.orange}; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
-    .event-card-title { font-family: 'Exo 2', sans-serif; font-size: 16px; font-weight: 700; color: #1a1a2e; margin-bottom: 8px; }
-    .event-card-meta { font-size: 12px; color: #888; display: flex; flex-direction: column; gap: 3px; }
-    .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin-bottom: 32px; }
-    .gallery-thumb { border-radius: 10px; overflow: hidden; aspect-ratio: 1; cursor: pointer; position: relative; box-shadow: 0 2px 8px rgba(0,0,0,0.08); transition: transform 0.15s; }
-    .gallery-thumb:hover { transform: scale(1.03); }
-    .gallery-thumb img { width: 100%; height: 100%; object-fit: cover; }
-    .gallery-thumb-video { width: 100%; height: 100%; background: linear-gradient(135deg, #1a1a2e, #2d3561); display: flex; align-items: center; justify-content: center; font-size: 32px; }
-    .portal-empty { text-align: center; padding: 40px; color: #aaa; font-size: 14px; }
-    .portal-logout { background: none; border: 1px solid #ddd; border-radius: 8px; padding: 6px 14px; font-size: 13px; color: #888; cursor: pointer; transition: all 0.15s; font-family: 'Inter', sans-serif; }
-    .portal-logout:hover { background: #fee; color: #e55; border-color: #e55; }
-    .modal-overlay-light { position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 20px; }
-    .modal-light { background: #fff; border-radius: 16px; padding: 28px; width: 100%; max-width: 580px; max-height: 90vh; overflow-y: auto; }
-    .modal-light-title { font-family: 'Exo 2', sans-serif; font-size: 20px; font-weight: 700; color: #1a1a2e; margin-bottom: 16px; }
-    .tag { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
-    .tag-blue { background: ${C.blue}18; color: ${C.blue}; }
-    .tag-green { background: ${C.green}18; color: ${C.green}; }
-    .tag-orange { background: ${C.orange}18; color: ${C.orange}; }
-  `;
-
-  const [viewItem, setViewItem] = useState(null);
-
-  if (loading) return (
-    <>
-      <style>{portalCss}</style>
-      <div className="portal" style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
-        <div style={{textAlign:"center",color:"#888"}}>
-          <div className="spinner" style={{borderTopColor:C.blue,margin:"0 auto 12px"}}/>
-          <div>Cargando SomosGTA…</div>
-        </div>
-      </div>
-    </>
-  );
-
-  return (
-    <>
-      <style>{css}</style>
-      <style>{portalCss}</style>
-      <div className="portal">
-        {/* TOPBAR */}
-        <div className="portal-topbar">
-          <div className="portal-brand">Somos<span>GTA</span></div>
-          <div className="portal-user">
-            <div className="portal-avatar">{user.name.split(" ").map(n=>n[0]).join("").slice(0,2)}</div>
-            <span>{user.name}</span>
-          </div>
-        </div>
-
-        <div className="portal-content">
-          {/* HERO */}
-          <div className="portal-hero" style={{background:`linear-gradient(135deg, ${config.hero_color_start}, ${config.hero_color_end})`, backgroundImage:config.hero_bg_image?`url(${config.hero_bg_image})`:"none", backgroundSize:"cover", backgroundPosition:"center", position:"relative"}}>
-            <div style={{position:"absolute",inset:0,background:`linear-gradient(135deg, ${config.hero_color_start}cc, ${config.hero_color_end}cc)`,borderRadius:20}}/>
-            <div style={{position:"relative",zIndex:1}}>
-              <h1>{config.hero_title} 👋</h1>
-              <p>{config.hero_subtitle}</p>
-            </div>
-          </div>
-
-          {/* CARRUSEL */}
-          {photos.length > 0 && (
-            <div style={{marginBottom:32}}>
-              <div className="portal-section-title">📸 Galería Destacada</div>
-              <div className="carousel-wrap">
-                <img className="carousel-img" src={photos[carouselIdx]?.url} alt={photos[carouselIdx]?.title} onClick={()=>setViewItem(photos[carouselIdx])}/>
-                <div className="carousel-caption">{photos[carouselIdx]?.title}</div>
-                <div className="carousel-arrows">
-                  <button className="carousel-arrow" onClick={e=>{e.stopPropagation();setCarouselIdx(i=>(i-1+photos.length)%photos.length);}}>‹</button>
-                  <button className="carousel-arrow" onClick={e=>{e.stopPropagation();setCarouselIdx(i=>(i+1)%photos.length);}}>›</button>
-                </div>
-                <div className="carousel-dots">
-                  {photos.map((_,i)=>(
-                    <button key={i} className={`carousel-dot ${i===carouselIdx?"active":""}`} onClick={()=>setCarouselIdx(i)}/>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* EVENTOS */}
-          {config.show_events && <div style={{marginBottom:32}}>
-            <div className="portal-section-title">📅 Próximos Eventos</div>
-            {events.length === 0 ? (
-              <div className="portal-empty">No hay eventos próximos programados</div>
-            ) : (
-              <div className="event-cards">
-                {events.map(e=>(
-                  <div key={e.id} className="event-card">
-                    <div className="event-card-date">📅 {e.date}{e.time&&` · ${e.time.slice(0,5)}`}</div>
-                    <div className="event-card-title">{e.title}</div>
-                    <div className="event-card-meta">
-                      {e.location&&<span>📍 {e.location}</span>}
-                      {e.area&&<span>🏢 {e.area}</span>}
-                    </div>
-                    {e.maps_url&&<a href={e.maps_url} target="_blank" rel="noreferrer" style={{display:"inline-block",marginTop:10,fontSize:12,color:C.blue,textDecoration:"none",fontWeight:600}}>🗺️ Ver en Maps</a>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>}
-
-          {/* VIDEOS */}
-          {config.show_videos && videos.length > 0 && (
-            <div style={{marginBottom:32}}>
-              <div className="portal-section-title">🎥 Videos</div>
-              <div className="gallery-grid">
-                {videos.map(item=>(
-                  <div key={item.id} className="gallery-thumb" onClick={()=>setViewItem(item)}>
-                    <div className="gallery-thumb-video">▶️</div>
-                    <div style={{position:"absolute",bottom:0,left:0,right:0,background:"linear-gradient(transparent,rgba(0,0,0,0.7))",padding:"8px",fontSize:11,color:"#fff",fontWeight:500}}>{item.title}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* GALERÍA COMPLETA */}
-          {config.show_photos && photos.length > 0 && (
-            <div style={{marginBottom:32}}>
-              <div className="portal-section-title">🖼️ Fotos</div>
-              <div className="gallery-grid">
-                {photos.map(item=>(
-                  <div key={item.id} className="gallery-thumb" onClick={()=>setViewItem(item)}>
-                    <img src={item.url} alt={item.title} onError={e=>e.target.style.display="none"}/>
-                    <div style={{position:"absolute",bottom:0,left:0,right:0,background:"linear-gradient(transparent,rgba(0,0,0,0.6))",padding:"8px",fontSize:11,color:"#fff",fontWeight:500,opacity:0,transition:"opacity 0.2s"}}
-                      onMouseEnter={e=>e.currentTarget.style.opacity="1"} onMouseLeave={e=>e.currentTarget.style.opacity="0"}>{item.title}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* FOOTER */}
-          <div style={{textAlign:"center",padding:"20px 0",borderTop:"1px solid #e0e0e0",color:"#bbb",fontSize:12}}>
-            {config.footer_text}
-            <button className="portal-logout" style={{marginLeft:16}} onClick={async()=>{await supabase.auth.signOut();window.location.reload();}}>Cerrar sesión</button>
-          </div>
-        </div>
-
-        {/* MODAL VER */}
-        {viewItem && (
-          <div className="modal-overlay-light" onClick={e=>e.target===e.currentTarget&&setViewItem(null)}>
-            <div className="modal-light">
-              <div className="modal-light-title">{viewItem.title}</div>
-              {viewItem.type==="foto" ? (
-                <img src={viewItem.url} alt={viewItem.title} style={{width:"100%",borderRadius:10,maxHeight:400,objectFit:"contain"}}/>
-              ) : (
-                <video src={viewItem.url} controls style={{width:"100%",borderRadius:10,maxHeight:360}}/>
-              )}
-              <div style={{marginTop:12,fontSize:12,color:"#999"}}>Subido por {viewItem.uploaded_by_name} · {new Date(viewItem.created_at).toLocaleDateString("es")}</div>
-              <div style={{marginTop:16,textAlign:"right"}}>
-                <button onClick={()=>setViewItem(null)} style={{padding:"8px 20px",background:C.blue,color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:13}}>Cerrar</button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </>
-  );
-}
-
 }
