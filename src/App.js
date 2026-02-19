@@ -378,10 +378,12 @@ function UserManagement({ users, setUsers, showToast, currentUser }) {
           <div className="table-title">👥 Gestión de Usuarios</div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
             <input className="search-input" placeholder="Buscar usuario…" value={search} onChange={e=>setSearch(e.target.value)} />
-            {isSA && <>
-              <button className="btn-sm btn-ghost" onClick={()=>setShowCsv(true)}>📂 CSV Masivo</button>
+            {(isSA || currentUser.role === "admin") && (
               <button className="btn-sm btn-blue" onClick={()=>setShowCreate(true)}>+ Nuevo Usuario</button>
-            </>}
+            )}
+            {isSA && (
+              <button className="btn-sm btn-ghost" onClick={()=>setShowCsv(true)}>📂 CSV Masivo</button>
+            )}
           </div>
         </div>
         <table>
@@ -435,10 +437,10 @@ function UserManagement({ users, setUsers, showToast, currentUser }) {
             ))}
             <div className="field">
               <label>Rol</label>
-              <select value={newUser.role} onChange={e=>setNewUser(u=>({...u,role:e.target.value}))}>
+              <select value={newUser.role} onChange={e=>setNewUser(u=>({...u,role:e.target.value}))} disabled={!isSA}>
                 <option value="empleado">Empleado</option>
-                <option value="admin">Admin de Área</option>
-                <option value="superadmin">Superadmin</option>
+                {isSA && <option value="admin">Admin de Área</option>}
+                {isSA && <option value="superadmin">Superadmin</option>}
               </select>
             </div>
             <div className="field">
