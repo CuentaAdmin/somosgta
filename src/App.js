@@ -586,6 +586,36 @@ function Settings({ logoUrl, setLogoUrl, showToast }) {
             ))}
           </div>
 
+          {/* CARRUSEL */}
+          <div style={{fontFamily:"'Exo 2',sans-serif",fontWeight:700,fontSize:14,marginBottom:12,color:C.blue}}>Imágenes del Carrusel</div>
+          <div style={{fontSize:12,color:C.muted,marginBottom:12}}>Estas imágenes aparecen en el carrusel del portal del empleado. No se toman de la galería.</div>
+          {(config.carousel_images||[]).map((img,i)=>(
+            <div key={i} style={{display:"flex",gap:10,alignItems:"center",marginBottom:8,background:C.darker,padding:"10px 12px",borderRadius:8,border:`1px solid ${C.border}`}}>
+              <span style={{color:C.muted,fontSize:12,minWidth:20}}>{i+1}</span>
+              <input type="url" placeholder="URL de la imagen" value={img.url||""} onChange={e=>{const imgs=[...(config.carousel_images||[])];imgs[i]={...imgs[i],url:e.target.value};updateConfig("carousel_images",imgs);}} style={{flex:2,background:"transparent",border:"none",color:C.text,fontSize:13,outline:"none"}}/>
+              <input type="text" placeholder="Título (opcional)" value={img.caption||""} onChange={e=>{const imgs=[...(config.carousel_images||[])];imgs[i]={...imgs[i],caption:e.target.value};updateConfig("carousel_images",imgs);}} style={{flex:1,background:"transparent",border:"none",color:C.text,fontSize:13,outline:"none"}}/>
+              <button onClick={()=>updateConfig("carousel_images",(config.carousel_images||[]).filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:"#ff6b6b",cursor:"pointer",fontSize:16}}>✕</button>
+            </div>
+          ))}
+          <button className="btn-sm btn-ghost" style={{marginBottom:24}} onClick={()=>updateConfig("carousel_images",[...(config.carousel_images||[]),{url:"",caption:""}])}>+ Agregar imagen</button>
+
+          {/* TARJETAS RÁPIDAS */}
+          <div style={{fontFamily:"'Exo 2',sans-serif",fontWeight:700,fontSize:14,marginBottom:12,color:C.blue}}>Tarjetas de Acceso Rápido</div>
+          <div style={{fontSize:12,color:C.muted,marginBottom:12}}>Aparecen debajo del carrusel. Pueden tener links externos o internos.</div>
+          {(config.quick_cards||[]).map((card,i)=>(
+            <div key={i} style={{background:C.darker,border:`1px solid ${C.border}`,borderRadius:10,padding:"14px",marginBottom:10}}>
+              <div style={{display:"flex",gap:10,marginBottom:8}}>
+                <input type="text" placeholder="Ícono (emoji)" value={card.icon||""} onChange={e=>{const cards=[...(config.quick_cards||[])];cards[i]={...cards[i],icon:e.target.value};updateConfig("quick_cards",cards);}} style={{width:64,background:"transparent",border:`1px solid ${C.border}`,borderRadius:8,padding:"8px",color:C.text,fontSize:16,textAlign:"center",outline:"none"}}/>
+                <input type="text" placeholder="Título *" value={card.title||""} onChange={e=>{const cards=[...(config.quick_cards||[])];cards[i]={...cards[i],title:e.target.value};updateConfig("quick_cards",cards);}} style={{flex:1,background:"transparent",border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",color:C.text,fontSize:13,outline:"none"}}/>
+                <input type="color" value={card.color||C.blue} onChange={e=>{const cards=[...(config.quick_cards||[])];cards[i]={...cards[i],color:e.target.value};updateConfig("quick_cards",cards);}} style={{width:40,height:36,borderRadius:8,border:"none",cursor:"pointer"}}/>
+                <button onClick={()=>updateConfig("quick_cards",(config.quick_cards||[]).filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:"#ff6b6b",cursor:"pointer",fontSize:16}}>✕</button>
+              </div>
+              <input type="text" placeholder="Descripción (opcional)" value={card.desc||""} onChange={e=>{const cards=[...(config.quick_cards||[])];cards[i]={...cards[i],desc:e.target.value};updateConfig("quick_cards",cards);}} style={{width:"100%",background:"transparent",border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",color:C.text,fontSize:13,outline:"none",marginBottom:8}}/>
+              <input type="url" placeholder="Link (URL externa o dejar vacío para sección interna)" value={card.link||""} onChange={e=>{const cards=[...(config.quick_cards||[])];cards[i]={...cards[i],link:e.target.value};updateConfig("quick_cards",cards);}} style={{width:"100%",background:"transparent",border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",color:C.text,fontSize:13,outline:"none"}}/>
+            </div>
+          ))}
+          <button className="btn-sm btn-ghost" style={{marginBottom:24}} onClick={()=>updateConfig("quick_cards",[...(config.quick_cards||[]),{icon:"📌",title:"",desc:"",color:C.blue,link:""}])}>+ Agregar tarjeta</button>
+
           {/* FOOTER */}
           <div style={{fontFamily:"'Exo 2',sans-serif",fontWeight:700,fontSize:14,marginBottom:12,color:C.blue}}>Pie de Página</div>
           <div className="field">
@@ -1177,12 +1207,15 @@ function EmployeePortal({ user }) {
   const [calYear, setCalYear] = useState(new Date().getFullYear());
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
   const [upToast, setUpToast] = useState(null);
+  const [cardsIdx, setCardsIdx] = useState(0);
+  const [viewEvent, setViewEvent] = useState(null);
   const showUpToast = (msg, type="info") => setUpToast({ msg, type, key: Date.now() });
   const [config, setConfig] = useState({
     hero_title:"¡Bienvenido a SomosGTA!", hero_subtitle:"Grupo de Tiendas Asociadas S.A.",
     hero_color_start:"#00aeef", hero_color_end:"#60bb46", hero_bg_image:"",
     show_events:true, show_photos:true, show_videos:true,
-    footer_text:"SomosGTA © Grupo de Tiendas Asociadas S.A."
+    footer_text:"SomosGTA © Grupo de Tiendas Asociadas S.A.",
+    carousel_images:[], quick_cards:[]
   });
 
   useEffect(() => {
@@ -1208,10 +1241,11 @@ function EmployeePortal({ user }) {
   const upcomingEvents = events.filter(e => new Date(e.date) >= new Date(new Date().toDateString()));
 
   useEffect(() => {
-    if (photos.length <= 1) return;
-    const t = setInterval(() => setCarouselIdx(i => (i+1) % photos.length), 4000);
+    const imgs = config.carousel_images;
+    if (!imgs || imgs.length <= 1) return;
+    const t = setInterval(() => setCarouselIdx(i => (i+1) % imgs.length), 4000);
     return () => clearInterval(t);
-  }, [photos.length]);
+  }, [config.carousel_images]);
 
   // Calendar helpers
   const firstDay = new Date(calYear, calMonth, 1).getDay();
@@ -1389,17 +1423,40 @@ function EmployeePortal({ user }) {
               <p>{config.hero_subtitle}</p>
             </div>
 
-            {photos.length > 0 && (
+            {config.carousel_images?.length > 0 && (
               <div style={{marginBottom:28}}>
-                <div className="portal-section-title">📸 Galería Destacada</div>
                 <div className="carousel-wrap">
-                  <img className="carousel-img" src={photos[carouselIdx]?.url} alt={photos[carouselIdx]?.title}/>
-                  <div className="carousel-caption">{photos[carouselIdx]?.title}</div>
+                  <img className="carousel-img" src={config.carousel_images[carouselIdx]?.url} alt={config.carousel_images[carouselIdx]?.caption||""}/>
+                  {config.carousel_images[carouselIdx]?.caption && <div className="carousel-caption">{config.carousel_images[carouselIdx].caption}</div>}
                   <div className="carousel-arrows">
-                    <button className="carousel-arrow" onClick={()=>setCarouselIdx(i=>(i-1+photos.length)%photos.length)}>‹</button>
-                    <button className="carousel-arrow" onClick={()=>setCarouselIdx(i=>(i+1)%photos.length)}>›</button>
+                    <button className="carousel-arrow" onClick={()=>setCarouselIdx(i=>(i-1+config.carousel_images.length)%config.carousel_images.length)}>‹</button>
+                    <button className="carousel-arrow" onClick={()=>setCarouselIdx(i=>(i+1)%config.carousel_images.length)}>›</button>
                   </div>
-                  <div className="carousel-dots">{photos.map((_,i)=><button key={i} className={`carousel-dot ${i===carouselIdx?"active":""}`} onClick={()=>setCarouselIdx(i)}/>)}</div>
+                  <div className="carousel-dots">{config.carousel_images.map((_,i)=><button key={i} className={`carousel-dot ${i===carouselIdx?"active":""}`} onClick={()=>setCarouselIdx(i)}/>)}</div>
+                </div>
+              </div>
+            )}
+
+            {config.quick_cards?.length > 0 && (
+              <div style={{marginBottom:28,position:"relative"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <button onClick={()=>setCardsIdx(i=>Math.max(0,i-1))} style={{width:36,height:36,borderRadius:"50%",border:"1px solid #e8edf2",background:"#fff",fontSize:18,cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.06)"}} disabled={cardsIdx===0}>‹</button>
+                  <div style={{flex:1,overflow:"hidden"}}>
+                    <div style={{display:"flex",gap:14,transform:`translateX(calc(-${cardsIdx * (220+14)}px))`,transition:"transform 0.35s ease"}}>
+                      {config.quick_cards.map((card,i)=>(
+                        <div key={i} onClick={()=>card.link&&window.open(card.link,"_blank")}
+                          style={{minWidth:220,background:card.color||C.blue,borderRadius:14,padding:"20px 18px",cursor:card.link?"pointer":"default",flexShrink:0,boxShadow:"0 4px 16px rgba(0,0,0,0.12)",transition:"transform 0.15s"}}
+                          onMouseEnter={e=>card.link&&(e.currentTarget.style.transform="translateY(-3px)")}
+                          onMouseLeave={e=>e.currentTarget.style.transform="none"}>
+                          <div style={{fontSize:32,marginBottom:10}}>{card.icon||"📌"}</div>
+                          <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:15,fontWeight:700,color:"#fff",marginBottom:4}}>{card.title}</div>
+                          {card.desc&&<div style={{fontSize:12,color:"rgba(255,255,255,0.8)",lineHeight:1.4}}>{card.desc}</div>}
+                          {card.link&&<div style={{marginTop:10,fontSize:11,color:"rgba(255,255,255,0.7)",display:"flex",alignItems:"center",gap:4}}>Abrir →</div>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <button onClick={()=>setCardsIdx(i=>Math.min(config.quick_cards.length-1,i+1))} style={{width:36,height:36,borderRadius:"50%",border:"1px solid #e8edf2",background:"#fff",fontSize:18,cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.06)"}} disabled={cardsIdx>=config.quick_cards.length-1}>›</button>
                 </div>
               </div>
             )}
@@ -1489,7 +1546,7 @@ function EmployeePortal({ user }) {
                     const hasEv=eventDates[ds];
                     const isToday=day===today.getDate()&&calMonth===today.getMonth()&&calYear===today.getFullYear();
                     return (
-                      <div key={day} className={`cal-cell ${isToday?"is-today":""} ${hasEv?"has-event":""}`}>
+                      <div key={day} className={`cal-cell ${isToday?"is-today":""} ${hasEv?"has-event":""}`} onClick={()=>hasEv&&setViewEvent(eventDates[ds][0])}>
                         <span style={{fontSize:13,fontWeight:isToday?700:400,color:isToday?C.blue:"#1a1a2e"}}>{day}</span>
                         {hasEv&&<span style={{width:5,height:5,borderRadius:"50%",background:C.orange,display:"block",marginTop:1}}/>}
                       </div>
@@ -1541,6 +1598,24 @@ function EmployeePortal({ user }) {
 
         </div>
       </div>
+
+      {/* MODAL EVENTO */}
+      {viewEvent && (
+        <div className="modal-overlay-light" onClick={e=>e.target===e.currentTarget&&setViewEvent(null)}>
+          <div className="modal-light" style={{maxWidth:520}}>
+            {viewEvent.image_url&&<img src={viewEvent.image_url} alt={viewEvent.title} style={{width:"100%",height:180,objectFit:"cover",borderRadius:10,marginBottom:16}} onError={e=>e.target.style.display="none"}/>}
+            <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:12}}>
+              <span style={{background:`${C.blue}15`,color:C.blue,padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:600}}>📅 {viewEvent.date}{viewEvent.time&&` · ${viewEvent.time.slice(0,5)}`}</span>
+              {viewEvent.area&&<span style={{background:`${C.green}15`,color:C.green,padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:600}}>🏢 {viewEvent.area}</span>}
+            </div>
+            <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:20,fontWeight:700,color:"#1a1a2e",marginBottom:10}}>{viewEvent.title}</div>
+            {viewEvent.description&&<div style={{fontSize:14,color:"#666",lineHeight:1.7,marginBottom:14}}>{viewEvent.description}</div>}
+            {viewEvent.location&&<div style={{fontSize:13,color:"#555",marginBottom:8}}>📍 <strong>Lugar:</strong> {viewEvent.location}</div>}
+            {viewEvent.maps_url&&<a href={viewEvent.maps_url} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:6,padding:"8px 16px",background:`${C.blue}15`,color:C.blue,borderRadius:8,fontSize:13,textDecoration:"none",marginTop:4}}>🗺️ Ver en Google Maps</a>}
+            <div style={{marginTop:16,textAlign:"right"}}><button className="btn-portal btn-portal-ghost" onClick={()=>setViewEvent(null)}>Cerrar</button></div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL ANUNCIO */}
       {selectedAnn && (
