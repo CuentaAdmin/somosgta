@@ -987,6 +987,177 @@ function GalleryModule({ currentUser }) {
   );
 }
 
+
+// ── ANUNCIOS ─────────────────────────────────────────────────
+function AnnouncementsModule({ currentUser }) {
+  const canManage = currentUser.role === "superadmin" || currentUser.role === "admin";
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [annToast, setAnnToast] = useState(null);
+  const [form, setForm] = useState({ title:"", content:"", area:"", priority:"normal", image_url:"", expires_at:"" });
+
+  const showAnnToast = (msg, type="info") => setAnnToast({ msg, type, key: Date.now() });
+
+  const loadAnnouncements = () => {
+    supabase.from("announcements").select("*")
+      .gt("expires_at", new Date().toISOString())
+      .order("created_at", { ascending: false })
+      .then(({ data }) => { if (data) setItems(data); setLoading(false); });
+  };
+
+  useEffect(() => { loadAnnouncements(); }, []);
+
+  const save = async () => {
+    if (!form.title || !form.content || !form.expires_at) { showAnnToast("Título, contenido y fecha de vencimiento son obligatorios","error"); return; }
+    setSaving(true);
+    const { data, error } = await supabase.from("announcements").insert({
+      ...form,
+      expires_at: new Date(form.expires_at).toISOString(),
+      created_by: currentUser.id,
+      created_by_name: currentUser.name
+    }).select().single();
+    if (error) { showAnnToast("Error: "+error.message,"error"); setSaving(false); return; }
+    setItems(i => [data, ...i]);
+    showAnnToast("Anuncio publicado","success");
+    setShowForm(false);
+    setForm({ title:"", content:"", area:"", priority:"normal", image_url:"", expires_at:"" });
+    setSaving(false);
+  };
+
+  const deleteAnn = async (id) => {
+    if (!window.confirm("¿Eliminar este anuncio?")) return;
+    await supabase.from("announcements").delete().eq("id", id);
+    setItems(i => i.filter(x => x.id !== id));
+    setSelected(null);
+    showAnnToast("Anuncio eliminado","info");
+  };
+
+  const priorityConfig = {
+    urgente:     { color:"#ff4d4d", bg:"#ff4d4d18", label:"🚨 Urgente" },
+    normal:      { color:C.blue,    bg:`${C.blue}18`, label:"📢 Normal" },
+    informativo: { color:C.green,   bg:`${C.green}18`, label:"ℹ️ Informativo" }
+  };
+
+  const daysLeft = (expires) => {
+    const diff = new Date(expires) - new Date();
+    const days = Math.ceil(diff / (1000*60*60*24));
+    if (days <= 0) return "Vence hoy";
+    if (days === 1) return "Vence mañana";
+    return `Vence en ${days} días`;
+  };
+
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
+        <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:18,fontWeight:700}}>📢 Anuncios y Comunicados</div>
+        {canManage && <button className="btn-sm btn-blue" onClick={()=>setShowForm(true)}>+ Nuevo Anuncio</button>}
+      </div>
+
+      {loading && <div style={{textAlign:"center",padding:40,color:C.muted}}>Cargando anuncios…</div>}
+
+      {!loading && items.length === 0 && (
+        <div style={{textAlign:"center",padding:60,color:C.muted}}>
+          <div style={{fontSize:48,marginBottom:12}}>📢</div>
+          <div style={{fontSize:14}}>No hay anuncios activos</div>
+        </div>
+      )}
+
+      <div style={{display:"flex",flexDirection:"column",gap:16}}>
+        {items.map(item => {
+          const pc = priorityConfig[item.priority] || priorityConfig.normal;
+          return (
+            <div key={item.id} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:14,overflow:"hidden",borderLeft:`4px solid ${pc.color}`,cursor:"pointer",transition:"box-shadow 0.15s"}}
+              onClick={()=>setSelected(item)}
+              onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 20px rgba(0,0,0,0.2)"}
+              onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
+              <div style={{display:"flex",gap:16,padding:20}}>
+                {item.image_url && <img src={item.image_url} alt={item.title} style={{width:80,height:80,borderRadius:10,objectFit:"cover",flexShrink:0}} onError={e=>e.target.style.display="none"}/>}
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8,flexWrap:"wrap"}}>
+                    <span style={{background:pc.bg,color:pc.color,padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:600}}>{pc.label}</span>
+                    {item.area && <span style={{background:`${C.green}18`,color:C.green,padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:600}}>🏢 {item.area}</span>}
+                    <span style={{fontSize:11,color:C.muted,marginLeft:"auto"}}>{daysLeft(item.expires_at)}</span>
+                  </div>
+                  <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:16,fontWeight:700,marginBottom:6}}>{item.title}</div>
+                  <div style={{fontSize:13,color:C.muted,lineHeight:1.6,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{item.content}</div>
+                  <div style={{fontSize:11,color:C.muted,marginTop:8}}>Publicado por {item.created_by_name} · {new Date(item.created_at).toLocaleDateString("es")}</div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* MODAL DETALLE */}
+      {selected && (
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setSelected(null)}>
+          <div className="modal" style={{maxWidth:560}}>
+            {selected.image_url && <img src={selected.image_url} alt={selected.title} style={{width:"100%",height:200,objectFit:"cover",borderRadius:10,marginBottom:20}} onError={e=>e.target.style.display="none"}/>}
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
+              <span style={{background:priorityConfig[selected.priority]?.bg,color:priorityConfig[selected.priority]?.color,padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:600}}>{priorityConfig[selected.priority]?.label}</span>
+              {selected.area && <span style={{background:`${C.green}18`,color:C.green,padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:600}}>🏢 {selected.area}</span>}
+            </div>
+            <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:20,fontWeight:700,marginBottom:12}}>{selected.title}</div>
+            <div style={{fontSize:14,color:C.muted,lineHeight:1.8,marginBottom:16,whiteSpace:"pre-wrap"}}>{selected.content}</div>
+            <div style={{fontSize:12,color:C.muted,borderTop:`1px solid ${C.border}`,paddingTop:12}}>
+              Publicado por <strong style={{color:C.text}}>{selected.created_by_name}</strong> · {new Date(selected.created_at).toLocaleDateString("es")} · Vence: {new Date(selected.expires_at).toLocaleString("es")}
+            </div>
+            <div className="modal-actions">
+              {canManage && <button className="btn-sm btn-danger" onClick={()=>deleteAnn(selected.id)}>🗑 Eliminar</button>}
+              <button className="btn-sm btn-ghost" onClick={()=>setSelected(null)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CREAR */}
+      {showForm && (
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowForm(false)}>
+          <div className="modal" style={{maxWidth:520}}>
+            <div className="modal-title">📢 Nuevo Anuncio</div>
+            <div className="field"><label>Título *</label><input type="text" placeholder="Título del anuncio" value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))}/></div>
+            <div className="field">
+              <label>Contenido *</label>
+              <textarea value={form.content} onChange={e=>setForm(f=>({...f,content:e.target.value}))} placeholder="Escribe el contenido del anuncio…" style={{width:"100%",background:C.darker,border:`1px solid ${C.border}`,borderRadius:10,padding:"13px 16px",color:C.text,fontSize:14,outline:"none",minHeight:120,resize:"vertical",fontFamily:"'Inter',sans-serif"}}/>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div className="field">
+                <label>Prioridad</label>
+                <select value={form.priority} onChange={e=>setForm(f=>({...f,priority:e.target.value}))}>
+                  <option value="informativo">ℹ️ Informativo</option>
+                  <option value="normal">📢 Normal</option>
+                  <option value="urgente">🚨 Urgente</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>Área que publica</label>
+                <select value={form.area} onChange={e=>setForm(f=>({...f,area:e.target.value}))}>
+                  <option value="">— General —</option>
+                  {AREAS.map(a=><option key={a}>{a}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="field">
+              <label>Fecha y hora de vencimiento *</label>
+              <input type="datetime-local" value={form.expires_at} onChange={e=>setForm(f=>({...f,expires_at:e.target.value}))} style={{width:"100%",background:C.darker,border:`1px solid ${C.border}`,borderRadius:10,padding:"13px 16px",color:C.text,fontSize:14,outline:"none"}}/>
+            </div>
+            <div className="field"><label>URL imagen (opcional, Supabase Storage)</label><input type="url" placeholder="https://…" value={form.image_url} onChange={e=>setForm(f=>({...f,image_url:e.target.value}))}/></div>
+            <div className="modal-actions">
+              <button className="btn-sm btn-ghost" onClick={()=>setShowForm(false)}>Cancelar</button>
+              <button className="btn-sm btn-blue" onClick={save} disabled={saving}>{saving?"Publicando…":"Publicar Anuncio"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {annToast && <Toast key={annToast.key} msg={annToast.msg} type={annToast.type} onClose={()=>setAnnToast(null)}/>}
+    </div>
+  );
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [users, setUsers] = useState([]);
@@ -1022,7 +1193,7 @@ export default function App() {
       case "dashboard":     return <Dashboard users={users}/>;
       case "users":         return <UserManagement users={users} setUsers={setUsers} showToast={showToast} currentUser={user}/>;
       case "settings":      return <Settings logoUrl={logoUrl} setLogoUrl={setLogoUrl} showToast={showToast}/>;
-      case "announcements": return <PlaceholderModule icon="📢" name="Anuncios y Comunicados" desc="Publica noticias y comunicados oficiales de GTA."/>;
+      case "announcements": return <AnnouncementsModule currentUser={user}/>;
       case "events":        return <EventsModule currentUser={user}/>;
       case "processes":     return <PlaceholderModule icon="📋" name="Procesos y Documentos" desc="Centraliza manuales y procedimientos oficiales de GTA."/>;
       case "gallery":       return <GalleryModule currentUser={user}/>;
