@@ -725,8 +725,10 @@ function GalleryModule({ currentUser }) {
 
   const handleUpload = async () => {
     if (!form.title) { showGalToast("El título es obligatorio","error"); return; }
-    if (form.type === "foto" && !form.file) { showGalToast("Selecciona una imagen","error"); return; }
-    if (form.type === "video" && !form.file) { showGalToast("Selecciona un video","error"); return; }
+    if (!form.file) { showGalToast("Selecciona un archivo","error"); return; }
+    const maxSize = form.type === "foto" ? 10 * 1024 * 1024 : 200 * 1024 * 1024;
+    const maxLabel = form.type === "foto" ? "10MB" : "200MB";
+    if (form.file.size > maxSize) { showGalToast(`El archivo supera el límite de ${maxLabel}`,"error"); return; }
     setUploading(true);
     let url = "";
     if (form.type === "foto" || form.type === "video") {
@@ -853,7 +855,7 @@ function GalleryModule({ currentUser }) {
                   <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>setForm(f=>({...f,file:e.target.files[0]}))}/>
                   <div className="upload-icon">{form.file?"✅":"📷"}</div>
                   <div className="upload-text">{form.file?form.file.name:"Clic para seleccionar imagen"}</div>
-                  <div className="upload-hint">JPG, PNG, WEBP — máx 50MB</div>
+                  <div className="upload-hint">JPG, PNG, WEBP — máx 10MB</div>
                 </label>
               </div>
             ) : (
@@ -863,7 +865,7 @@ function GalleryModule({ currentUser }) {
                   <input type="file" accept="video/*" style={{display:"none"}} onChange={e=>setForm(f=>({...f,file:e.target.files[0]}))}/>
                   <div className="upload-icon">{form.file?"✅":"🎥"}</div>
                   <div className="upload-text">{form.file?form.file.name:"Clic para seleccionar video"}</div>
-                  <div className="upload-hint">MP4, MOV, AVI, WEBM — máx 50MB</div>
+                  <div className="upload-hint">MP4, MOV, AVI, WEBM — máx 200MB</div>
                 </label>
               </div>
             )}
