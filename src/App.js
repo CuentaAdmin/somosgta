@@ -24,7 +24,7 @@ const css = `
   .login-card { background: ${C.card}; border: 1px solid ${C.border}; border-radius: 20px; padding: 48px 40px; width: 100%; max-width: 420px; position: relative; z-index: 1; box-shadow: 0 0 60px rgba(0,174,239,0.08), 0 24px 48px rgba(0,0,0,0.5); animation: fadeUp 0.5s ease; }
   @keyframes fadeUp { from { opacity:0; transform: translateY(24px); } to { opacity:1; transform: translateY(0); } }
   .brand-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 32px; justify-content: center; }
-  .brand-logo { width: 48px; height: 48px; border-radius: 10px; background: linear-gradient(135deg, ${C.orange}, ${C.yellow}); display: flex; align-items: center; justify-content: center; font-family: 'Exo 2', sans-serif; font-weight: 900; font-size: 20px; color: #fff; overflow: hidden; }
+  .brand-logo { width: 48px; height: 48px; border-radius: 10px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
   .brand-logo img { width: 100%; height: 100%; object-fit: cover; border-radius: 10px; }
   .brand-name { font-family: 'Exo 2', sans-serif; font-weight: 700; font-size: 22px; color: ${C.text}; }
   .brand-name span { color: ${C.blue}; }
@@ -40,7 +40,7 @@ const css = `
   .app { display: flex; min-height: 100vh; }
   .sidebar { width: 240px; min-width: 240px; background: ${C.card}; border-right: 1px solid ${C.border}; display: flex; flex-direction: column; position: fixed; top: 0; left: 0; bottom: 0; z-index: 100; }
   .sidebar-brand { padding: 24px 20px; border-bottom: 1px solid ${C.border}; display: flex; align-items: center; gap: 10px; }
-  .sidebar-logo { width: 36px; height: 36px; border-radius: 8px; background: linear-gradient(135deg, ${C.orange}, ${C.yellow}); display: flex; align-items: center; justify-content: center; font-family: 'Exo 2', sans-serif; font-weight: 900; font-size: 14px; color: #fff; overflow: hidden; flex-shrink: 0; }
+  .sidebar-logo { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; }
   .sidebar-logo img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
   .sidebar-title { font-family: 'Exo 2', sans-serif; font-weight: 700; font-size: 16px; }
   .sidebar-title span { color: ${C.blue}; }
@@ -145,10 +145,12 @@ function Toast({ msg, type, onClose }) {
   );
 }
 
-function Logo({ url, size=36 }) {
+const LOGO_URL = "https://eoefjevfwrqkfnmcftmp.supabase.co/storage/v1/object/sign/assets/logo.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9hNGIzNWZkNy00NWJlLTRhOGItYTljYi0xYzE5NGVkNTRhNGQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhc3NldHMvbG9nby5wbmciLCJpYXQiOjE3NzE0ODM0OTIsImV4cCI6MTkyOTE2MzQ5Mn0.4u6NjS8K5Th2vw7AJMS3LijC-06fb73viMdaMbReHa4";
+
+function Logo({ size=36 }) {
   return (
-    <div className="sidebar-logo" style={{ width:size, height:size, fontSize:size*0.38 }}>
-      {url ? <img src={url} alt="GTA" /> : "GTA"}
+    <div style={{ width:size, height:size, flexShrink:0 }}>
+      <img src={LOGO_URL} alt="GTA" style={{ width:"100%", height:"100%", objectFit:"contain", borderRadius:8 }}/>
     </div>
   );
 }
@@ -175,7 +177,7 @@ function LoginPage({ onLogin, logoUrl }) {
     <div className="login-bg">
       <div className="login-card">
         <div className="brand-bar">
-          <Logo url={logoUrl} size={48} />
+          <Logo size={48} />
           <div><div className="brand-name">Somos<span>GTA</span></div></div>
         </div>
         <div className="login-title">Grupo de Tiendas Asociadas S.A. — Intranet Corporativa</div>
@@ -215,7 +217,7 @@ function Sidebar({ user, active, setActive, onLogout, logoUrl }) {
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
-        <Logo url={logoUrl} size={36} />
+        <Logo size={36} />
         <div className="sidebar-title">Somos<span>GTA</span></div>
       </div>
       <div className="nav-section">
@@ -989,7 +991,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [users, setUsers] = useState([]);
   const [page, setPage] = useState("dashboard");
-  const [logoUrl, setLogoUrl] = useState("");
+  const [logoUrl, setLogoUrl] = useState(LOGO_URL);
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState(true);
 
