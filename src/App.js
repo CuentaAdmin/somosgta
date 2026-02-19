@@ -526,6 +526,182 @@ function PlaceholderModule({ icon, name, desc }) {
   );
 }
 
+// ── EVENTOS ──────────────────────────────────────────────────
+const MONTHS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+const DAYS = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+
+function EventsModule({ currentUser }) {
+  const canCreate = currentUser.role === "superadmin" || currentUser.role === "admin";
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [evToast, setEvToast] = useState(null);
+  const today = new Date();
+  const [calYear, setCalYear] = useState(today.getFullYear());
+  const [calMonth, setCalMonth] = useState(today.getMonth());
+  const [form, setForm] = useState({ title:"", description:"", date:"", time:"", location:"", maps_url:"", area:"", image_url:"" });
+
+  const showEvToast = (msg, type="info") => setEvToast({ msg, type, key: Date.now() });
+
+  useEffect(() => {
+    supabase.from("events").select("*").order("date", { ascending: true }).then(({ data }) => {
+      if (data) setEvents(data);
+      setLoading(false);
+    });
+  }, []);
+
+  const saveEvent = async () => {
+    if (!form.title || !form.date) { showEvToast("Título y fecha son obligatorios","error"); return; }
+    setSaving(true);
+    const { data, error } = await supabase.from("events").insert({ ...form, created_by: currentUser.id }).select().single();
+    if (error) { showEvToast("Error: " + error.message,"error"); setSaving(false); return; }
+    setEvents(e => [...e, data]);
+    showEvToast("Evento creado","success");
+    setShowForm(false);
+    setForm({ title:"", description:"", date:"", time:"", location:"", maps_url:"", area:"", image_url:"" });
+    setSaving(false);
+  };
+
+  const firstDay = new Date(calYear, calMonth, 1).getDay();
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+  const eventDates = events.reduce((acc, e) => {
+    const d = e.date?.slice(0,10);
+    if (d) { if (!acc[d]) acc[d] = []; acc[d].push(e); }
+    return acc;
+  }, {});
+
+  const prevMonth = () => { if (calMonth === 0) { setCalMonth(11); setCalYear(y=>y-1); } else setCalMonth(m=>m-1); };
+  const nextMonth = () => { if (calMonth === 11) { setCalMonth(0); setCalYear(y=>y+1); } else setCalMonth(m=>m+1); };
+
+  const upcomingEvents = events.filter(e => new Date(e.date) >= new Date(today.toDateString())).slice(0,10);
+  const pastEvents = events.filter(e => new Date(e.date) < new Date(today.toDateString())).slice(0,5);
+
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
+        <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:18,fontWeight:700}}>📅 Eventos y Agenda</div>
+        {canCreate && <button className="btn-sm btn-blue" onClick={()=>setShowForm(true)}>+ Nuevo Evento</button>}
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 320px",gap:20,alignItems:"start"}}>
+        <div className="table-card">
+          <div style={{padding:"16px 20px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <button className="btn-sm btn-ghost" onClick={prevMonth}>‹</button>
+            <span style={{fontFamily:"'Exo 2',sans-serif",fontWeight:700,fontSize:16}}>{MONTHS[calMonth]} {calYear}</span>
+            <button className="btn-sm btn-ghost" onClick={nextMonth}>›</button>
+          </div>
+          <div style={{padding:16}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",marginBottom:8}}>
+              {DAYS.map(d=><div key={d} style={{textAlign:"center",fontSize:11,fontWeight:600,color:C.muted,padding:"4px 0"}}>{d}</div>)}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+              {Array.from({length:firstDay}).map((_,i)=><div key={"e"+i}/>)}
+              {Array.from({length:daysInMonth}).map((_,i)=>{
+                const day = i+1;
+                const dateStr = `${calYear}-${String(calMonth+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+                const hasEvents = eventDates[dateStr];
+                const isToday = day===today.getDate() && calMonth===today.getMonth() && calYear===today.getFullYear();
+                return (
+                  <div key={day} onClick={()=>hasEvents&&setSelectedEvent(eventDates[dateStr][0])}
+                    style={{aspectRatio:"1",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRadius:8,cursor:hasEvents?"pointer":"default",background:isToday?`${C.blue}30`:hasEvents?`${C.orange}18`:"transparent",border:isToday?`1px solid ${C.blue}`:"1px solid transparent",transition:"background 0.15s"}}>
+                    <span style={{fontSize:13,fontWeight:isToday?700:400,color:isToday?C.blue:C.text}}>{day}</span>
+                    {hasEvents && <span style={{width:5,height:5,borderRadius:"50%",background:C.orange,marginTop:1,display:"block"}}/>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div style={{padding:"10px 20px",borderTop:`1px solid ${C.border}`,display:"flex",gap:16,fontSize:12,color:C.muted}}>
+            <span style={{display:"flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:"50%",background:C.blue,display:"inline-block"}}/> Hoy</span>
+            <span style={{display:"flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:"50%",background:C.orange,display:"inline-block"}}/> Evento</span>
+          </div>
+        </div>
+
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
+          <div className="table-card">
+            <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`}}>
+              <div className="table-title">Próximos Eventos</div>
+            </div>
+            <div style={{maxHeight:300,overflowY:"auto"}}>
+              {loading && <div style={{padding:20,textAlign:"center",color:C.muted,fontSize:13}}>Cargando…</div>}
+              {!loading && upcomingEvents.length===0 && <div style={{padding:20,textAlign:"center",color:C.muted,fontSize:13}}>No hay eventos próximos</div>}
+              {upcomingEvents.map(e=>(
+                <div key={e.id} onClick={()=>setSelectedEvent(e)} style={{padding:"12px 18px",borderBottom:`1px solid ${C.border}66`,cursor:"pointer"}}
+                  onMouseEnter={el=>el.currentTarget.style.background=`${C.border}44`}
+                  onMouseLeave={el=>el.currentTarget.style.background="transparent"}>
+                  <div style={{fontSize:13,fontWeight:600,marginBottom:3}}>{e.title}</div>
+                  <div style={{fontSize:11,color:C.orange}}>{e.date}{e.time&&` · ${e.time.slice(0,5)}`}</div>
+                  {e.location&&<div style={{fontSize:11,color:C.muted,marginTop:2}}>📍 {e.location}</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+          {pastEvents.length>0 && (
+            <div className="table-card">
+              <div style={{padding:"14px 18px",borderBottom:`1px solid ${C.border}`}}><div className="table-title" style={{fontSize:14}}>Eventos Pasados</div></div>
+              {pastEvents.map(e=>(
+                <div key={e.id} onClick={()=>setSelectedEvent(e)} style={{padding:"10px 18px",borderBottom:`1px solid ${C.border}44`,cursor:"pointer",opacity:0.6}}
+                  onMouseEnter={el=>el.currentTarget.style.opacity="1"} onMouseLeave={el=>el.currentTarget.style.opacity="0.6"}>
+                  <div style={{fontSize:13,fontWeight:500}}>{e.title}</div>
+                  <div style={{fontSize:11,color:C.muted}}>{e.date}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {selectedEvent && (
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setSelectedEvent(null)}>
+          <div className="modal" style={{maxWidth:540}}>
+            {selectedEvent.image_url && <img src={selectedEvent.image_url} alt={selectedEvent.title} style={{width:"100%",height:200,objectFit:"cover",borderRadius:10,marginBottom:20}} onError={e=>e.target.style.display="none"}/>}
+            <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:20,fontWeight:700,marginBottom:12}}>{selectedEvent.title}</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:10,marginBottom:16}}>
+              <span style={{background:`${C.blue}20`,color:C.blue,padding:"4px 10px",borderRadius:20,fontSize:12}}>📅 {selectedEvent.date}{selectedEvent.time&&` · ${selectedEvent.time.slice(0,5)}`}</span>
+              {selectedEvent.area&&<span style={{background:`${C.green}20`,color:C.green,padding:"4px 10px",borderRadius:20,fontSize:12}}>🏢 {selectedEvent.area}</span>}
+            </div>
+            {selectedEvent.description&&<div style={{fontSize:14,color:C.muted,lineHeight:1.7,marginBottom:16}}>{selectedEvent.description}</div>}
+            {selectedEvent.location&&<div style={{fontSize:13,marginBottom:8}}>📍 <strong>Lugar:</strong> {selectedEvent.location}</div>}
+            {selectedEvent.maps_url&&<a href={selectedEvent.maps_url} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",gap:6,padding:"8px 16px",background:`${C.blue}20`,color:C.blue,borderRadius:8,fontSize:13,textDecoration:"none",marginTop:8}}>🗺️ Ver en Google Maps</a>}
+            <div className="modal-actions"><button className="btn-sm btn-ghost" onClick={()=>setSelectedEvent(null)}>Cerrar</button></div>
+          </div>
+        </div>
+      )}
+
+      {showForm && (
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowForm(false)}>
+          <div className="modal" style={{maxWidth:520}}>
+            <div className="modal-title">📅 Nuevo Evento</div>
+            <div className="field"><label>Título *</label><input type="text" placeholder="Nombre del evento" value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))}/></div>
+            <div className="field"><label>Descripción</label><input type="text" placeholder="Descripción del evento" value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))}/></div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div className="field"><label>Fecha *</label><input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/></div>
+              <div className="field"><label>Hora</label><input type="time" value={form.time} onChange={e=>setForm(f=>({...f,time:e.target.value}))}/></div>
+            </div>
+            <div className="field"><label>Lugar</label><input type="text" placeholder="Ej: Sala de reuniones" value={form.location} onChange={e=>setForm(f=>({...f,location:e.target.value}))}/></div>
+            <div className="field"><label>Link Google Maps</label><input type="url" placeholder="https://maps.google.com/..." value={form.maps_url} onChange={e=>setForm(f=>({...f,maps_url:e.target.value}))}/></div>
+            <div className="field"><label>Área responsable</label>
+              <select value={form.area} onChange={e=>setForm(f=>({...f,area:e.target.value}))}>
+                <option value="">— Seleccionar —</option>
+                {AREAS.map(a=><option key={a}>{a}</option>)}
+              </select>
+            </div>
+            <div className="field"><label>URL imagen (Supabase Storage)</label><input type="url" placeholder="https://..." value={form.image_url} onChange={e=>setForm(f=>({...f,image_url:e.target.value}))}/></div>
+            <div className="modal-actions">
+              <button className="btn-sm btn-ghost" onClick={()=>setShowForm(false)}>Cancelar</button>
+              <button className="btn-sm btn-blue" onClick={saveEvent} disabled={saving}>{saving?"Guardando…":"Crear Evento"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {evToast && <Toast key={evToast.key} msg={evToast.msg} type={evToast.type} onClose={()=>setEvToast(null)}/>}
+    </div>
+  );
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [users, setUsers] = useState([]);
@@ -562,7 +738,7 @@ export default function App() {
       case "users":         return <UserManagement users={users} setUsers={setUsers} showToast={showToast} currentUser={user}/>;
       case "settings":      return <Settings logoUrl={logoUrl} setLogoUrl={setLogoUrl} showToast={showToast}/>;
       case "announcements": return <PlaceholderModule icon="📢" name="Anuncios y Comunicados" desc="Publica noticias y comunicados oficiales de GTA."/>;
-      case "events":        return <PlaceholderModule icon="📅" name="Eventos y Agenda" desc="Gestiona eventos corporativos y reuniones de equipo."/>;
+      case "events":        return <EventsModule currentUser={user}/>;
       case "processes":     return <PlaceholderModule icon="📋" name="Procesos y Documentos" desc="Centraliza manuales y procedimientos oficiales de GTA."/>;
       case "gallery":       return <PlaceholderModule icon="🖼️" name="Galería Multimedia" desc="Sube fotos y videos corporativos permanentes."/>;
       default: return null;
