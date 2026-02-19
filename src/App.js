@@ -1223,18 +1223,17 @@ function EmployeePortal({ user }) {
       supabase.from("events").select("*").order("date"),
       supabase.from("announcements").select("*").gt("expires_at", new Date().toISOString()).order("created_at",{ascending:false}),
       supabase.from("gallery").select("*").order("created_at",{ascending:false}),
-      supabase.from("portal_config").select("*").eq("id",1).single()
-    ]).then(([{data:ev},{data:ann},{data:gal},{data:cfg}]) => {
+      supabase.from("portal_config").select("*").eq("id",1).single(),
+      supabase.from("folders").select("*").eq("created_by", user.id)
+    ]).then(([{data:ev},{data:ann},{data:gal},{data:cfg},{data:fols}]) => {
       if (ev) setEvents(ev);
       if (ann) setAnnouncements(ann);
       if (gal) {
-        // Empleado solo ve: archivos sin carpeta (General) + sus propios archivos
         const filtered = gal.filter(g => !g.folder || g.uploaded_by === user.id);
         setGallery(filtered);
-        const fols = [...new Set(filtered.map(g=>g.folder).filter(Boolean))];
-        setFolders(fols);
       }
       if (cfg) setConfig(cfg);
+      if (fols) setFolders(fols);
       setLoading(false);
     });
   }, []);
@@ -1259,10 +1258,17 @@ function EmployeePortal({ user }) {
     return acc;
   }, {});
 
-  const createFolder = () => {
+  const createFolder = async () => {
     if (!newFolderName.trim()) return;
-    const name = newFolderName.trim().replace(/\//g,"");
-    const fullPath = activeFolder && !activeFolder.includes("/") ? activeFolder+"/"+name : name;
+    const name = newFolderName.trim().replace(/[/\\]/g,"");
+    const parent = activeFolder && !activeFolder.includes("/") ? activeFolder : null;
+    const fullPath = parent ? parent+"/"+name : name;
+    await supabase.from("folders").insert({ name, parent, created_by: user.id });
+    if (parent) {
+      setFolders(f=>[...f,{name,parent,created_by:user.id}]);
+    } else {
+      setFolders(f=>[...f,{name,parent:null,created_by:user.id}]);
+    }
     setActiveFolder(fullPath);
     setNewFolderName("");
     setShowNewFolder(false);
@@ -1574,61 +1580,127 @@ function EmployeePortal({ user }) {
 
           {/* ── GALERÍA ── */}
           {section === "gallery" && (()=>{
-            // Nivel actual: null=raiz, "Carpeta"=carpeta, "Carpeta/Sub"=subcarpeta
-            const rootFolders = [...new Set(gallery.map(g=>g.folder).filter(Boolean).map(f=>f.split("/")[0]))];
             const isInFolder = activeFolder && !activeFolder.includes("/");
-            const subFolders = isInFolder
-              ? [...new Set(gallery.filter(g=>g.folder&&g.folder.startsWith(activeFolder+"/")).map(g=>g.folder.split("/")[1]))]
-              : [];
+            const isInSub = activeFolder?.includes("/");
             const currentItems = !activeFolder
               ? gallery.filter(g=>!g.folder)
               : gallery.filter(g=>g.folder===activeFolder);
+            const subFolderNames = isInFolder
+              ? [...new Set(gallery.filter(g=>g.folder?.startsWith(activeFolder+"/")).map(g=>g.folder.split("/")[1]))]
+              : [];
+            const rootFolderNames = [...new Set([
+              ...folders.map(f=>f.name),
+              ...gallery.map(g=>g.folder).filter(Boolean).map(f=>f.split("/")[0])
+            ])];
+            const subFolderNamesForRoot = (fname) => [
+              ...new Set([
+                ...folders.filter(f=>f.parent===fname).map(f=>f.name),
+                ...gallery.filter(g=>g.folder?.startsWith(fname+"/")).map(g=>g.folder.split("/")[1])
+              ])
+            ];
+            const countFiles = (path) => gallery.filter(g=>g.folder===path).length;
+            const countAllInFolder = (fname) => gallery.filter(g=>g.folder===fname||g.folder?.startsWith(fname+"/")).length;
 
             return <>
               {/* BREADCRUMB */}
-              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:14,fontSize:13,color:"#888"}}>
-                <button onClick={()=>setActiveFolder(null)} style={{background:"none",border:"none",cursor:"pointer",color:!activeFolder?"#1a1a2e":C.blue,fontWeight:!activeFolder?700:400,fontSize:13,padding:0}}>📁 General</button>
-                {activeFolder && <>
-                  <span>›</span>
-                  <button onClick={()=>setActiveFolder(activeFolder.split("/")[0])} style={{background:"none",border:"none",cursor:"pointer",color:activeFolder.includes("/")?C.blue:"#1a1a2e",fontWeight:activeFolder.includes("/")?400:700,fontSize:13,padding:0}}>📂 {activeFolder.split("/")[0]}</button>
-                </>}
-                {activeFolder?.includes("/") && <>
-                  <span>›</span>
-                  <span style={{color:"#1a1a2e",fontWeight:700}}>📂 {activeFolder.split("/")[1]}</span>
-                </>}
-              </div>
-
-              {/* CARPETAS / SUBCARPETAS */}
-              <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
-                {!activeFolder && rootFolders.map(f=>(
-                  <button key={f} className="folder-chip" onClick={()=>setActiveFolder(f)}>📂 {f}</button>
-                ))}
-                {isInFolder && subFolders.map(s=>(
-                  <button key={s} className="folder-chip" onClick={()=>setActiveFolder(activeFolder+"/"+s)}>📂 {s}</button>
-                ))}
-                <button className="folder-chip" onClick={()=>setShowNewFolder(true)} style={{borderStyle:"dashed"}}>
-                  {!activeFolder?"+ Nueva Carpeta":isInFolder?"+ Nueva Subcarpeta":""}
-                  {activeFolder?.includes("/")?"":""}
-                  {(!activeFolder||isInFolder)?"":""}
-                  {activeFolder?.includes("/")?null:""}
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20,fontSize:13}}>
+                <button onClick={()=>setActiveFolder(null)} style={{background:"none",border:"none",cursor:"pointer",color:!activeFolder?"#1a1a2e":C.blue,fontWeight:!activeFolder?700:500,fontSize:13,padding:0,display:"flex",alignItems:"center",gap:4}}>
+                  🏠 Mi Galería
                 </button>
-                {!activeFolder && <button className="folder-chip" onClick={()=>setShowNewFolder(true)} style={{display:"none"}}/>}
-                <button className="btn-portal btn-portal-blue" style={{marginLeft:"auto"}} onClick={()=>setShowUpload(true)}>+ Subir Archivo</button>
+                {activeFolder && <>
+                  <span style={{color:"#ccc"}}>›</span>
+                  <button onClick={()=>setActiveFolder(activeFolder.split("/")[0])} style={{background:"none",border:"none",cursor:"pointer",color:isInSub?C.blue:"#1a1a2e",fontWeight:isInSub?500:700,fontSize:13,padding:0}}>
+                    {activeFolder.split("/")[0]}
+                  </button>
+                </>}
+                {isInSub && <>
+                  <span style={{color:"#ccc"}}>›</span>
+                  <span style={{color:"#1a1a2e",fontWeight:700,fontSize:13}}>{activeFolder.split("/")[1]}</span>
+                </>}
               </div>
 
-              {currentItems.length===0 && <div className="portal-empty"><div style={{fontSize:40,marginBottom:10}}>📂</div>Esta carpeta está vacía</div>}
+              {/* ACCIONES */}
+              <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginBottom:20}}>
+                {!isInSub && <button className="btn-portal btn-portal-ghost" onClick={()=>setShowNewFolder(true)}>
+                  📁 {!activeFolder?"Nueva Carpeta":"Nueva Subcarpeta"}
+                </button>}
+                <button className="btn-portal btn-portal-blue" onClick={()=>setShowUpload(true)}>+ Subir Archivo</button>
+              </div>
 
-              <div className="gallery-grid">
-                {currentItems.map(item=>(
-                  <div key={item.id} className="gallery-thumb" onClick={()=>setViewItem(item)}>
-                    {item.type==="foto"
-                      ? <img src={item.url} alt={item.title} onError={e=>e.target.style.display="none"}/>
-                      : <div className="gallery-thumb-video">▶️</div>
-                    }
-                    <div style={{position:"absolute",bottom:0,left:0,right:0,background:"linear-gradient(transparent,rgba(0,0,0,0.65))",padding:"8px",fontSize:11,color:"#fff",fontWeight:500}}>{item.title}</div>
+              {/* TARJETAS DE CARPETAS */}
+              {!activeFolder && rootFolderNames.length > 0 && (
+                <div style={{marginBottom:28}}>
+                  <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:14,fontWeight:700,color:"#888",marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
+                    CARPETAS
+                    <span style={{flex:1,height:1,background:"#e8edf2",display:"inline-block"}}/>
                   </div>
-                ))}
-              </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:14}}>
+                    {rootFolderNames.map(fname=>(
+                      <div key={fname} onClick={()=>setActiveFolder(fname)}
+                        style={{background:"#fff",border:"2px solid #e8edf2",borderRadius:14,padding:"20px 16px",cursor:"pointer",textAlign:"center",transition:"all 0.15s",boxShadow:"0 2px 8px rgba(0,0,0,0.05)"}}
+                        onMouseEnter={e=>{e.currentTarget.style.borderColor=C.blue;e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow=`0 8px 20px ${C.blue}22`;}}
+                        onMouseLeave={e=>{e.currentTarget.style.borderColor="#e8edf2";e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="0 2px 8px rgba(0,0,0,0.05)";}}>
+                        <div style={{fontSize:40,marginBottom:10}}>📂</div>
+                        <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:13,fontWeight:700,color:"#1a1a2e",marginBottom:4,wordBreak:"break-word"}}>{fname}</div>
+                        <div style={{fontSize:11,color:"#aaa"}}>{countAllInFolder(fname)} archivo(s)</div>
+                        {subFolderNamesForRoot(fname).length>0 && <div style={{fontSize:10,color:C.blue,marginTop:4}}>{subFolderNamesForRoot(fname).length} subcarpeta(s)</div>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* TARJETAS DE SUBCARPETAS */}
+              {isInFolder && subFolderNames.length > 0 && (
+                <div style={{marginBottom:28}}>
+                  <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:14,fontWeight:700,color:"#888",marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
+                    SUBCARPETAS
+                    <span style={{flex:1,height:1,background:"#e8edf2",display:"inline-block"}}/>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:14,marginBottom:24}}>
+                    {subFolderNames.map(sname=>(
+                      <div key={sname} onClick={()=>setActiveFolder(activeFolder+"/"+sname)}
+                        style={{background:"#fff",border:"2px solid #e8edf2",borderRadius:14,padding:"20px 16px",cursor:"pointer",textAlign:"center",transition:"all 0.15s",boxShadow:"0 2px 8px rgba(0,0,0,0.05)"}}
+                        onMouseEnter={e=>{e.currentTarget.style.borderColor=C.orange;e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow=`0 8px 20px ${C.orange}22`;}}
+                        onMouseLeave={e=>{e.currentTarget.style.borderColor="#e8edf2";e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="0 2px 8px rgba(0,0,0,0.05)";}}>
+                        <div style={{fontSize:36,marginBottom:10}}>📁</div>
+                        <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:13,fontWeight:700,color:"#1a1a2e",marginBottom:4,wordBreak:"break-word"}}>{sname}</div>
+                        <div style={{fontSize:11,color:"#aaa"}}>{countFiles(activeFolder+"/"+sname)} archivo(s)</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ARCHIVOS */}
+              {currentItems.length > 0 && (
+                <div>
+                  <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:14,fontWeight:700,color:"#888",marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
+                    ARCHIVOS
+                    <span style={{flex:1,height:1,background:"#e8edf2",display:"inline-block"}}/>
+                    <span style={{fontSize:12,fontWeight:400}}>{currentItems.length} archivo(s)</span>
+                  </div>
+                  <div className="gallery-grid">
+                    {currentItems.map(item=>(
+                      <div key={item.id} className="gallery-thumb" onClick={()=>setViewItem(item)}>
+                        {item.type==="foto"
+                          ? <img src={item.url} alt={item.title} onError={e=>e.target.style.display="none"}/>
+                          : <div className="gallery-thumb-video">▶️</div>
+                        }
+                        <div style={{position:"absolute",bottom:0,left:0,right:0,background:"linear-gradient(transparent,rgba(0,0,0,0.65))",padding:"8px",fontSize:11,color:"#fff",fontWeight:500}}>{item.title}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {currentItems.length===0 && rootFolderNames.length===0 && subFolderNames.length===0 && (
+                <div className="portal-empty"><div style={{fontSize:48,marginBottom:12}}>📂</div>No hay archivos aún. ¡Crea una carpeta y sube tu primer archivo!</div>
+              )}
+
+              {currentItems.length===0 && (activeFolder) && subFolderNames.length===0 && (
+                <div className="portal-empty"><div style={{fontSize:40,marginBottom:10}}>📂</div>Esta carpeta está vacía</div>
+              )}
             </>;
           })()}
 
