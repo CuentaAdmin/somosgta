@@ -939,7 +939,7 @@ export default function App() {
   );
 
   if (!user) return <><style>{css}</style><LoginPage onLogin={setUser} logoUrl={logoUrl}/></>;
-
+  if (user.role === "empleado") return <EmployeePortal user={user} />;
   return (
     <><style>{css}</style>
     <div className="app">
