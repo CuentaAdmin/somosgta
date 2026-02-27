@@ -629,6 +629,61 @@ function Settings({ logoUrl, setLogoUrl, showToast }) {
         </div>
       )}
 
+      {/* GUEST PORTAL CONFIG — NUEVA SECCIÓN */}
+      {config && (
+        <div className="table-card" style={{padding:28,marginBottom:20}}>
+          <div className="table-title" style={{marginBottom:6}}>🌐 Portal de Invitados</div>
+          <div style={{fontSize:13,color:C.muted,marginBottom:8}}>
+            Personaliza el hero de la página pública de invitados.
+          </div>
+          <div style={{fontSize:12,color:C.blue,marginBottom:24,padding:"8px 14px",background:`${C.blue}12`,borderRadius:8,border:`1px solid ${C.blue}30`,display:"flex",alignItems:"center",gap:8}}>
+            🔗 URL de acceso:&nbsp;<strong>somosgta.vercel.app/#/guest</strong>
+          </div>
+
+          <div className="field">
+            <label>Título del hero</label>
+            <input type="text" value={config.guest_hero_title||""} onChange={e=>updateConfig("guest_hero_title",e.target.value)} placeholder="Bienvenido"/>
+          </div>
+          <div className="field">
+            <label>Subtítulo</label>
+            <input type="text" value={config.guest_hero_subtitle||""} onChange={e=>updateConfig("guest_hero_subtitle",e.target.value)} placeholder="Comparte tus fotos y videos"/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <div className="field">
+              <label>Color inicio</label>
+              <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                <input type="color" value={config.guest_hero_color_start||"#00aeef"} onChange={e=>updateConfig("guest_hero_color_start",e.target.value)} style={{width:48,height:40,borderRadius:8,border:"none",cursor:"pointer"}}/>
+                <input type="text" value={config.guest_hero_color_start||"#00aeef"} onChange={e=>updateConfig("guest_hero_color_start",e.target.value)} style={{flex:1,background:C.darker,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 14px",color:C.text,fontSize:14,outline:"none"}}/>
+              </div>
+            </div>
+            <div className="field">
+              <label>Color fin</label>
+              <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                <input type="color" value={config.guest_hero_color_end||"#60bb46"} onChange={e=>updateConfig("guest_hero_color_end",e.target.value)} style={{width:48,height:40,borderRadius:8,border:"none",cursor:"pointer"}}/>
+                <input type="text" value={config.guest_hero_color_end||"#60bb46"} onChange={e=>updateConfig("guest_hero_color_end",e.target.value)} style={{flex:1,background:C.darker,border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 14px",color:C.text,fontSize:14,outline:"none"}}/>
+              </div>
+            </div>
+          </div>
+          <div className="field">
+            <label>Imagen de fondo (URL, opcional)</label>
+            <input type="url" value={config.guest_hero_bg_image||""} onChange={e=>updateConfig("guest_hero_bg_image",e.target.value)} placeholder="https://..."/>
+          </div>
+
+          {/* PREVIEW */}
+          <div style={{borderRadius:12,padding:"28px 32px",marginBottom:20,background:`linear-gradient(135deg,${config.guest_hero_color_start||"#00aeef"},${config.guest_hero_color_end||"#60bb46"})`,backgroundImage:config.guest_hero_bg_image?`url(${config.guest_hero_bg_image})`:"none",backgroundSize:"cover",backgroundPosition:"center",position:"relative",overflow:"hidden"}}>
+            <div style={{position:"absolute",inset:0,background:`linear-gradient(135deg,${config.guest_hero_color_start||"#00aeef"}cc,${config.guest_hero_color_end||"#60bb46"}cc)`}}/>
+            <div style={{position:"relative",zIndex:1}}>
+              <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:20,fontWeight:900,color:"#fff",marginBottom:6}}>{config.guest_hero_title||"Bienvenido"}</div>
+              <div style={{fontSize:13,color:"rgba(255,255,255,0.85)"}}>{config.guest_hero_subtitle||"Comparte tus fotos y videos"}</div>
+            </div>
+          </div>
+
+          <button className="btn-sm btn-blue" onClick={saveConfig} disabled={saving}>
+            {saving?"Guardando…":"💾 Guardar Portal de Invitados"}
+          </button>
+        </div>
+      )}
+
       {/* COLORES */}
       <div className="table-card" style={{padding:28}}>
         <div className="table-title" style={{marginBottom:20}}>🎨 Colores Corporativos GTA</div>
@@ -835,13 +890,17 @@ function EventsModule({ currentUser }) {
 }
 
 
-// ── GALERÍA ──────────────────────────────────────────────────
+// ── GALERÍA (con pestaña Invitados para admin/superadmin) ─────
 function GalleryModule({ currentUser }) {
+  const isAdmin = currentUser.role === "superadmin" || currentUser.role === "admin";
+  const [tab, setTab] = useState("internal"); // "internal" | "guests"
   const [items, setItems] = useState([]);
+  const [guestItems, setGuestItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [selected, setSelected] = useState(null);
+  const [selectedGuest, setSelectedGuest] = useState(null);
   const [filter, setFilter] = useState("all");
   const [galToast, setGalToast] = useState(null);
   const [form, setForm] = useState({ title:"", type:"foto", file:null });
@@ -849,8 +908,12 @@ function GalleryModule({ currentUser }) {
   const showGalToast = (msg, type="info") => setGalToast({ msg, type, key: Date.now() });
 
   useEffect(() => {
-    supabase.from("gallery").select("*").order("created_at", { ascending: false }).then(({ data }) => {
-      if (data) setItems(data);
+    Promise.all([
+      supabase.from("gallery").select("*").order("created_at", { ascending: false }),
+      isAdmin ? supabase.from("guest_uploads").select("*").order("created_at", { ascending: false }) : Promise.resolve({ data: [] })
+    ]).then(([{ data: gData }, { data: guData }]) => {
+      if (gData) setItems(gData);
+      if (guData) setGuestItems(guData);
       setLoading(false);
     });
   }, []);
@@ -862,17 +925,13 @@ function GalleryModule({ currentUser }) {
     const maxLabel = form.type === "foto" ? "10MB" : "200MB";
     if (form.file.size > maxSize) { showGalToast(`El archivo supera el límite de ${maxLabel}`,"error"); return; }
     setUploading(true);
-    let url = "";
-    if (form.type === "foto" || form.type === "video") {
-      const ext = form.file.name.split(".").pop();
-      const filename = `${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage.from("gallery").upload(filename, form.file);
-      if (uploadError) { showGalToast("Error al subir archivo: " + uploadError.message,"error"); setUploading(false); return; }
-      const { data: urlData } = supabase.storage.from("gallery").getPublicUrl(filename);
-      url = urlData.publicUrl;
-    }
+    const ext = form.file.name.split(".").pop();
+    const filename = `${Date.now()}.${ext}`;
+    const { error: uploadError } = await supabase.storage.from("gallery").upload(filename, form.file);
+    if (uploadError) { showGalToast("Error al subir archivo: " + uploadError.message,"error"); setUploading(false); return; }
+    const { data: urlData } = supabase.storage.from("gallery").getPublicUrl(filename);
     const { data, error } = await supabase.from("gallery").insert({
-      title: form.title, type: form.type, url,
+      title: form.title, type: form.type, url: urlData.publicUrl,
       uploaded_by: currentUser.id, uploaded_by_name: currentUser.name
     }).select().single();
     if (error) { showGalToast("Error al guardar: " + error.message,"error"); setUploading(false); return; }
@@ -883,12 +942,35 @@ function GalleryModule({ currentUser }) {
     setUploading(false);
   };
 
+  const downloadFile = async (url, title) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = title;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      showGalToast("Descarga iniciada","success");
+    } catch {
+      showGalToast("Error al descargar","error");
+    }
+  };
+
   const getYoutubeEmbed = (url) => {
     const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/);
     return match ? `https://www.youtube.com/embed/${match[1]}` : null;
   };
 
   const grouped = items.filter(i => filter==="all" || i.type===filter).reduce((acc, item) => {
+    const date = new Date(item.created_at);
+    const key = `${date.getFullYear()} — ${MONTHS[date.getMonth()]}`;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(item);
+    return acc;
+  }, {});
+
+  const groupedGuests = guestItems.filter(i => filter==="all" || i.type===filter).reduce((acc, item) => {
     const date = new Date(item.created_at);
     const key = `${date.getFullYear()} — ${MONTHS[date.getMonth()]}`;
     if (!acc[key]) acc[key] = [];
@@ -906,46 +988,105 @@ function GalleryModule({ currentUser }) {
               <button key={val} onClick={()=>setFilter(val)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,background:filter===val?C.blue:"transparent",color:filter===val?"#fff":C.muted,transition:"all 0.15s"}}>{label}</button>
             ))}
           </div>
-          <button className="btn-sm btn-blue" onClick={()=>setShowForm(true)}>+ Subir</button>
+          {tab === "internal" && <button className="btn-sm btn-blue" onClick={()=>setShowForm(true)}>+ Subir</button>}
         </div>
       </div>
 
-      {loading && <div style={{textAlign:"center",padding:40,color:C.muted}}>Cargando galería…</div>}
-
-      {!loading && Object.keys(grouped).length === 0 && (
-        <div style={{textAlign:"center",padding:60,color:C.muted}}>
-          <div style={{fontSize:48,marginBottom:12}}>🖼️</div>
-          <div style={{fontSize:14}}>No hay archivos aún. ¡Sé el primero en subir!</div>
+      {/* TABS — solo para admin/superadmin */}
+      {isAdmin && (
+        <div style={{display:"flex",gap:4,background:C.darker,border:`1px solid ${C.border}`,borderRadius:10,padding:4,marginBottom:24,width:"fit-content"}}>
+          <button onClick={()=>setTab("internal")} style={{padding:"8px 20px",borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:tab==="internal"?C.card:"transparent",color:tab==="internal"?C.text:C.muted,transition:"all 0.15s",boxShadow:tab==="internal"?`0 2px 8px rgba(0,0,0,0.3)`:"none"}}>
+            🖼️ Galería Interna
+          </button>
+          <button onClick={()=>setTab("guests")} style={{padding:"8px 20px",borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:tab==="guests"?C.card:"transparent",color:tab==="guests"?C.orange:C.muted,transition:"all 0.15s",boxShadow:tab==="guests"?`0 2px 8px rgba(0,0,0,0.3)`:"none",display:"flex",alignItems:"center",gap:6}}>
+            🌐 Subidas de Invitados
+            {guestItems.length > 0 && <span style={{background:C.orange,color:"#fff",fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{guestItems.length}</span>}
+          </button>
         </div>
       )}
 
-      {Object.entries(grouped).map(([month, monthItems]) => (
-        <div key={month} style={{marginBottom:32}}>
-          <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:14,fontWeight:700,color:C.muted,marginBottom:12,display:"flex",alignItems:"center",gap:10}}>
-            <span>{month}</span>
-            <span style={{flex:1,height:1,background:C.border}}/>
-            <span style={{fontSize:12}}>{monthItems.length} archivo(s)</span>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
-            {monthItems.map(item => (
-              <div key={item.id} onClick={()=>setSelected(item)} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",cursor:"pointer",transition:"transform 0.15s, box-shadow 0.15s"}}
-                onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow="0 8px 24px rgba(0,0,0,0.3)";}}
-                onMouseLeave={e=>{e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="none";}}>
-                {item.type === "foto" ? (
-                  <img src={item.url} alt={item.title} style={{width:"100%",height:140,objectFit:"cover"}} onError={e=>e.target.style.display="none"}/>
-                ) : (
-                  <div style={{width:"100%",height:140,background:C.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:36}}>▶️</div>
-                )}
-                <div style={{padding:"10px 12px"}}>
-                  <div style={{fontSize:13,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.title}</div>
-                  <div style={{fontSize:11,color:C.muted,marginTop:3}}>{item.uploaded_by_name} · {new Date(item.created_at).toLocaleDateString("es")}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
+      {loading && <div style={{textAlign:"center",padding:40,color:C.muted}}>Cargando galería…</div>}
 
+      {/* GALERÍA INTERNA */}
+      {tab === "internal" && !loading && (
+        <>
+          {Object.keys(grouped).length === 0 && (
+            <div style={{textAlign:"center",padding:60,color:C.muted}}>
+              <div style={{fontSize:48,marginBottom:12}}>🖼️</div>
+              <div style={{fontSize:14}}>No hay archivos aún. ¡Sé el primero en subir!</div>
+            </div>
+          )}
+          {Object.entries(grouped).map(([month, monthItems]) => (
+            <div key={month} style={{marginBottom:32}}>
+              <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:14,fontWeight:700,color:C.muted,marginBottom:12,display:"flex",alignItems:"center",gap:10}}>
+                <span>{month}</span>
+                <span style={{flex:1,height:1,background:C.border}}/>
+                <span style={{fontSize:12}}>{monthItems.length} archivo(s)</span>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
+                {monthItems.map(item => (
+                  <div key={item.id} onClick={()=>setSelected(item)} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",cursor:"pointer",transition:"transform 0.15s, box-shadow 0.15s"}}
+                    onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow="0 8px 24px rgba(0,0,0,0.3)";}}
+                    onMouseLeave={e=>{e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="none";}}>
+                    {item.type === "foto" ? (
+                      <img src={item.url} alt={item.title} style={{width:"100%",height:140,objectFit:"cover"}} onError={e=>e.target.style.display="none"}/>
+                    ) : (
+                      <div style={{width:"100%",height:140,background:C.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:36}}>▶️</div>
+                    )}
+                    <div style={{padding:"10px 12px"}}>
+                      <div style={{fontSize:13,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.title}</div>
+                      <div style={{fontSize:11,color:C.muted,marginTop:3}}>{item.uploaded_by_name} · {new Date(item.created_at).toLocaleDateString("es")}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+
+      {/* GALERÍA INVITADOS */}
+      {tab === "guests" && !loading && (
+        <>
+          <div style={{padding:"12px 16px",background:`${C.orange}12`,border:`1px solid ${C.orange}30`,borderRadius:10,marginBottom:20,fontSize:13,color:C.orange,display:"flex",alignItems:"center",gap:8}}>
+            🌐 Contenido subido por visitantes anónimos desde el portal público. Solo admins pueden descargar.
+          </div>
+          {Object.keys(groupedGuests).length === 0 && (
+            <div style={{textAlign:"center",padding:60,color:C.muted}}>
+              <div style={{fontSize:48,marginBottom:12}}>🌐</div>
+              <div style={{fontSize:14}}>No hay subidas de invitados aún</div>
+            </div>
+          )}
+          {Object.entries(groupedGuests).map(([month, monthItems]) => (
+            <div key={month} style={{marginBottom:32}}>
+              <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:14,fontWeight:700,color:C.muted,marginBottom:12,display:"flex",alignItems:"center",gap:10}}>
+                <span>{month}</span>
+                <span style={{flex:1,height:1,background:C.border}}/>
+                <span style={{fontSize:12}}>{monthItems.length} archivo(s)</span>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
+                {monthItems.map(item => (
+                  <div key={item.id} onClick={()=>setSelectedGuest(item)} style={{background:C.card,border:`1px solid ${C.orange}33`,borderRadius:12,overflow:"hidden",cursor:"pointer",transition:"transform 0.15s, box-shadow 0.15s"}}
+                    onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow=`0 8px 24px ${C.orange}22`;}}
+                    onMouseLeave={e=>{e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="none";}}>
+                    {item.type === "foto" ? (
+                      <img src={item.url} alt={item.title} style={{width:"100%",height:140,objectFit:"cover"}} onError={e=>e.target.style.display="none"}/>
+                    ) : (
+                      <div style={{width:"100%",height:140,background:C.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:36}}>▶️</div>
+                    )}
+                    <div style={{padding:"10px 12px"}}>
+                      <div style={{fontSize:13,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.title}</div>
+                      <div style={{fontSize:11,color:C.muted,marginTop:3}}>Invitado · {new Date(item.created_at).toLocaleDateString("es")}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+
+      {/* MODAL GALERÍA INTERNA */}
       {selected && (
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setSelected(null)}>
           <div className="modal" style={{maxWidth:640}}>
@@ -962,8 +1103,35 @@ function GalleryModule({ currentUser }) {
             <div style={{marginTop:12,fontSize:12,color:C.muted}}>
               Subido por <strong style={{color:C.text}}>{selected.uploaded_by_name}</strong> · {new Date(selected.created_at).toLocaleDateString("es")}
             </div>
-            <div style={{marginTop:8,fontSize:11,color:C.muted,fontStyle:"italic"}}>🔒 Este archivo es permanente y no puede ser eliminado</div>
             <div className="modal-actions"><button className="btn-sm btn-ghost" onClick={()=>setSelected(null)}>Cerrar</button></div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL INVITADO — con descarga */}
+      {selectedGuest && (
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setSelectedGuest(null)}>
+          <div className="modal" style={{maxWidth:640}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+              <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:18,fontWeight:700,flex:1}}>{selectedGuest.title}</div>
+              <span style={{background:`${C.orange}20`,color:C.orange,fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20}}>🌐 Invitado</span>
+            </div>
+            {selectedGuest.type === "foto" ? (
+              <img src={selectedGuest.url} alt={selectedGuest.title} style={{width:"100%",borderRadius:10,maxHeight:400,objectFit:"contain",background:C.darker}}/>
+            ) : (
+              <video src={selectedGuest.url} controls style={{width:"100%",borderRadius:10,maxHeight:400}}/>
+            )}
+            <div style={{marginTop:12,fontSize:12,color:C.muted}}>
+              Subido por visitante anónimo · {new Date(selectedGuest.created_at).toLocaleDateString("es")}
+            </div>
+            <div className="modal-actions">
+              <button className="btn-sm btn-ghost" onClick={()=>setSelectedGuest(null)}>Cerrar</button>
+              {isAdmin && (
+                <button className="btn-sm btn-blue" onClick={()=>downloadFile(selectedGuest.url, selectedGuest.title)}>
+                  ⬇️ Descargar
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1121,7 +1289,6 @@ function AnnouncementsModule({ currentUser }) {
         })}
       </div>
 
-      {/* MODAL DETALLE */}
       {selected && (
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setSelected(null)}>
           <div className="modal" style={{maxWidth:560}}>
@@ -1143,7 +1310,6 @@ function AnnouncementsModule({ currentUser }) {
         </div>
       )}
 
-      {/* MODAL CREAR */}
       {showForm && (
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowForm(false)}>
           <div className="modal" style={{maxWidth:520}}>
@@ -1187,6 +1353,311 @@ function AnnouncementsModule({ currentUser }) {
     </div>
   );
 }
+
+
+// ── PORTAL DE INVITADOS (público, sin auth) ───────────────────
+function GuestPortal() {
+  const [items, setItems] = useState([]);
+  const [config, setConfig] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
+  const [viewItem, setViewItem] = useState(null);
+  const [filter, setFilter] = useState("all");
+  const [uploadForm, setUploadForm] = useState({ title:"", type:"foto", file:null });
+  const [guestToast, setGuestToast] = useState(null);
+
+  const showGuestToast = (msg, type="info") => setGuestToast({ msg, type, key: Date.now() });
+
+  useEffect(() => {
+    Promise.all([
+      supabase.from("guest_uploads").select("*").order("created_at", { ascending: false }),
+      supabase.from("portal_config").select("*").eq("id", 1).single()
+    ]).then(([{ data: uploads }, { data: cfg }]) => {
+      if (uploads) setItems(uploads);
+      if (cfg) setConfig(cfg);
+      setLoading(false);
+    });
+  }, []);
+
+  const handleUpload = async () => {
+    if (!uploadForm.title.trim()) { showGuestToast("El título es obligatorio","error"); return; }
+    if (!uploadForm.file) { showGuestToast("Selecciona un archivo","error"); return; }
+    const maxSize = uploadForm.type === "foto" ? 10 * 1024 * 1024 : 50 * 1024 * 1024;
+    const maxLabel = uploadForm.type === "foto" ? "10MB" : "50MB";
+    if (uploadForm.file.size > maxSize) { showGuestToast(`El archivo supera el límite de ${maxLabel}`,"error"); return; }
+    setUploading(true);
+    const ext = uploadForm.file.name.split(".").pop();
+    const filename = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+    const { error: upErr } = await supabase.storage.from("guest-gallery").upload(filename, uploadForm.file);
+    if (upErr) { showGuestToast("Error al subir: " + upErr.message,"error"); setUploading(false); return; }
+    const { data: urlData } = supabase.storage.from("guest-gallery").getPublicUrl(filename);
+    const { data, error } = await supabase.from("guest_uploads").insert({
+      title: uploadForm.title.trim(),
+      type: uploadForm.type,
+      url: urlData.publicUrl
+    }).select().single();
+    if (error) { showGuestToast("Error al guardar","error"); setUploading(false); return; }
+    setItems(i => [data, ...i]);
+    showGuestToast("¡Archivo compartido exitosamente!","success");
+    setShowUpload(false);
+    setUploadForm({ title:"", type:"foto", file:null });
+    setUploading(false);
+  };
+
+  const filtered = items.filter(i => filter === "all" || i.type === filter);
+  const heroColorStart = config?.guest_hero_color_start || "#00aeef";
+  const heroColorEnd   = config?.guest_hero_color_end   || "#60bb46";
+  const heroBgImage    = config?.guest_hero_bg_image    || "";
+  const heroTitle      = config?.guest_hero_title       || "Bienvenido";
+  const heroSubtitle   = config?.guest_hero_subtitle    || "Comparte tus fotos y videos con nosotros";
+
+  const guestCss = `
+    @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap');
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #f8f9fb; color: #1a1a2e; font-family: 'DM Sans', sans-serif; min-height: 100vh; }
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-thumb { background: ${heroColorStart}; border-radius: 10px; }
+    .g-wrap { min-height: 100vh; background: #f8f9fb; }
+    .g-nav { position: sticky; top: 0; z-index: 100; backdrop-filter: blur(16px); background: rgba(248,249,251,0.85); border-bottom: 1px solid rgba(0,0,0,0.06); padding: 14px 40px; display: flex; align-items: center; justify-content: space-between; }
+    .g-nav-brand { display: flex; align-items: center; gap: 10px; }
+    .g-nav-title { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 18px; color: #1a1a2e; }
+    .g-nav-title span { color: ${heroColorStart}; }
+    .g-upload-btn { padding: 10px 22px; background: ${heroColorStart}; color: #fff; border: none; border-radius: 100px; font-family: 'Syne', sans-serif; font-weight: 700; font-size: 13px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px; box-shadow: 0 4px 14px ${heroColorStart}44; }
+    .g-upload-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 20px ${heroColorStart}55; }
+    .g-hero { position: relative; overflow: hidden; padding: 80px 40px 72px; text-align: center; background: linear-gradient(135deg, ${heroColorStart}, ${heroColorEnd}); }
+    .g-hero-bg { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: 0.18; }
+    .g-hero-overlay { position: absolute; inset: 0; background: linear-gradient(135deg, ${heroColorStart}dd, ${heroColorEnd}cc); }
+    .g-hero-content { position: relative; z-index: 1; }
+    .g-hero-eyebrow { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: #fff; font-size: 11px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; padding: 5px 14px; border-radius: 100px; margin-bottom: 20px; backdrop-filter: blur(4px); }
+    .g-hero h1 { font-family: 'Syne', sans-serif; font-size: clamp(32px, 5vw, 56px); font-weight: 800; color: #fff; line-height: 1.1; margin-bottom: 16px; }
+    .g-hero p { font-size: 16px; color: rgba(255,255,255,0.85); max-width: 480px; margin: 0 auto 32px; line-height: 1.6; }
+    .g-hero-cta { display: inline-flex; align-items: center; gap: 8px; padding: 14px 28px; background: #fff; color: ${heroColorStart}; border: none; border-radius: 100px; font-family: 'Syne', sans-serif; font-weight: 700; font-size: 14px; cursor: pointer; transition: all 0.2s; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+    .g-hero-cta:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(0,0,0,0.25); }
+    .g-hero-stats { display: flex; gap: 32px; justify-content: center; margin-top: 36px; flex-wrap: wrap; }
+    .g-hero-stat { text-align: center; }
+    .g-hero-stat-num { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800; color: #fff; line-height: 1; }
+    .g-hero-stat-label { font-size: 11px; color: rgba(255,255,255,0.7); margin-top: 3px; text-transform: uppercase; letter-spacing: 1px; }
+    .g-body { max-width: 1200px; margin: 0 auto; padding: 48px 32px; }
+    .g-section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; flex-wrap: wrap; gap: 12px; }
+    .g-section-title { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800; color: #1a1a2e; }
+    .g-filter-bar { display: flex; gap: 4px; background: #fff; border: 1px solid #e8edf2; border-radius: 100px; padding: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .g-filter-btn { padding: 7px 18px; border-radius: 100px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; font-family: 'DM Sans', sans-serif; transition: all 0.15s; }
+    .g-filter-btn.active { background: ${heroColorStart}; color: #fff; box-shadow: 0 2px 8px ${heroColorStart}44; }
+    .g-filter-btn:not(.active) { background: transparent; color: #888; }
+    .g-filter-btn:not(.active):hover { color: #1a1a2e; }
+    .g-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+    .g-card { background: #fff; border-radius: 16px; overflow: hidden; cursor: pointer; box-shadow: 0 2px 12px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; transition: all 0.2s; }
+    .g-card:hover { transform: translateY(-4px); box-shadow: 0 12px 32px rgba(0,0,0,0.12); border-color: ${heroColorStart}44; }
+    .g-card-thumb { width: 100%; height: 180px; object-fit: cover; display: block; }
+    .g-card-video { width: 100%; height: 180px; background: linear-gradient(135deg, #1a1a2e, #2d3561); display: flex; align-items: center; justify-content: center; }
+    .g-card-play { width: 48px; height: 48px; background: rgba(255,255,255,0.15); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; backdrop-filter: blur(4px); border: 1px solid rgba(255,255,255,0.2); }
+    .g-card-body { padding: 14px 16px; }
+    .g-card-title { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 14px; color: #1a1a2e; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .g-card-meta { font-size: 11px; color: #aaa; display: flex; align-items: center; gap: 6px; }
+    .g-card-type { display: inline-flex; align-items: center; gap: 3px; background: ${heroColorStart}15; color: ${heroColorStart}; padding: 2px 8px; border-radius: 100px; font-size: 10px; font-weight: 600; }
+    .g-empty { text-align: center; padding: 80px 20px; color: #bbb; }
+    .g-empty-icon { font-size: 56px; margin-bottom: 16px; filter: grayscale(1); opacity: 0.5; }
+    .g-empty-title { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 700; color: #ccc; margin-bottom: 8px; }
+    .g-empty-sub { font-size: 13px; color: #ccc; }
+    .g-footer { text-align: center; padding: 32px; border-top: 1px solid #eee; color: #ccc; font-size: 12px; }
+    .g-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 20px; animation: gFadeIn 0.2s ease; }
+    @keyframes gFadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .g-modal { background: #fff; border-radius: 20px; padding: 28px; width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; animation: gSlideUp 0.25s ease; }
+    @keyframes gSlideUp { from { opacity:0; transform: translateY(16px); } to { opacity:1; transform: translateY(0); } }
+    .g-upload-modal { max-width: 480px; }
+    .g-field { margin-bottom: 16px; }
+    .g-field label { display: block; font-size: 11px; font-weight: 600; color: #999; margin-bottom: 7px; letter-spacing: 0.8px; text-transform: uppercase; }
+    .g-field input, .g-field select { width: 100%; border: 1.5px solid #e8edf2; border-radius: 10px; padding: 11px 14px; font-size: 14px; color: #1a1a2e; outline: none; font-family: 'DM Sans', sans-serif; transition: border-color 0.2s; }
+    .g-field input:focus, .g-field select:focus { border-color: ${heroColorStart}; box-shadow: 0 0 0 3px ${heroColorStart}18; }
+    .g-drop-zone { border: 2px dashed #d8e0ea; border-radius: 14px; padding: 32px; text-align: center; cursor: pointer; transition: all 0.2s; }
+    .g-drop-zone:hover { border-color: ${heroColorStart}; background: ${heroColorStart}06; }
+    .g-drop-icon { font-size: 36px; margin-bottom: 10px; }
+    .g-drop-text { font-size: 13px; color: #888; }
+    .g-drop-hint { font-size: 11px; color: #bbb; margin-top: 6px; }
+    .g-btn { padding: 11px 22px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; font-family: 'Syne', sans-serif; transition: all 0.15s; }
+    .g-btn-primary { background: ${heroColorStart}; color: #fff; box-shadow: 0 4px 12px ${heroColorStart}33; }
+    .g-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px ${heroColorStart}44; }
+    .g-btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+    .g-btn-ghost { background: #f5f7fa; color: #555; border: 1px solid #e8edf2; }
+    .g-btn-ghost:hover { background: #eef0f4; }
+    .g-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+    .g-toast { position: fixed; bottom: 24px; right: 24px; background: #fff; border-radius: 12px; padding: 14px 20px; display: flex; align-items: center; gap: 10px; font-size: 13px; font-family: 'DM Sans', sans-serif; box-shadow: 0 8px 32px rgba(0,0,0,0.15); z-index: 300; animation: gFadeIn 0.3s ease; max-width: 300px; border: 1px solid #eee; }
+    .g-toast-success { border-left: 3px solid #22c55e; }
+    .g-toast-error { border-left: 3px solid #ef4444; }
+    .g-toast-info { border-left: 3px solid ${heroColorStart}; }
+    .loading-guest { min-height: 100vh; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 14px; background: #f8f9fb; }
+    .g-spinner { width: 36px; height: 36px; border: 3px solid #e8edf2; border-top-color: ${heroColorStart}; border-radius: 50%; animation: gSpin 0.8s linear infinite; }
+    @keyframes gSpin { to { transform: rotate(360deg); } }
+  `;
+
+  const photos = items.filter(i => i.type === "foto").length;
+  const videos = items.filter(i => i.type === "video").length;
+
+  if (loading) return (
+    <><style>{guestCss}</style>
+    <div className="loading-guest">
+      <div className="g-spinner"/>
+      <div style={{color:"#aaa",fontSize:13,fontFamily:"'DM Sans',sans-serif"}}>Cargando…</div>
+    </div></>
+  );
+
+  return (
+    <><style>{guestCss}</style>
+    <div className="g-wrap">
+
+      {/* NAV */}
+      <nav className="g-nav">
+        <div className="g-nav-brand">
+          <Logo size={30}/>
+          <div className="g-nav-title">Somos<span>GTA</span></div>
+        </div>
+        <button className="g-upload-btn" onClick={()=>setShowUpload(true)}>
+          <span>↑</span> Compartir
+        </button>
+      </nav>
+
+      {/* HERO */}
+      <div className="g-hero">
+        {heroBgImage && <div className="g-hero-bg" style={{backgroundImage:`url(${heroBgImage})`}}/>}
+        <div className="g-hero-overlay"/>
+        <div className="g-hero-content">
+          <div className="g-hero-eyebrow">
+            <span>✦</span> Portal Público GTA
+          </div>
+          <h1>{heroTitle}</h1>
+          <p>{heroSubtitle}</p>
+          <button className="g-hero-cta" onClick={()=>setShowUpload(true)}>
+            <span>📤</span> Compartir archivo
+          </button>
+          <div className="g-hero-stats">
+            <div className="g-hero-stat">
+              <div className="g-hero-stat-num">{items.length}</div>
+              <div className="g-hero-stat-label">Archivos</div>
+            </div>
+            <div className="g-hero-stat">
+              <div className="g-hero-stat-num">{photos}</div>
+              <div className="g-hero-stat-label">Fotos</div>
+            </div>
+            <div className="g-hero-stat">
+              <div className="g-hero-stat-num">{videos}</div>
+              <div className="g-hero-stat-label">Videos</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* BODY */}
+      <div className="g-body">
+        <div className="g-section-header">
+          <div className="g-section-title">Galería Compartida</div>
+          <div className="g-filter-bar">
+            {[["all","Todos"],["foto","Fotos"],["video","Videos"]].map(([val,label])=>(
+              <button key={val} className={`g-filter-btn ${filter===val?"active":""}`} onClick={()=>setFilter(val)}>{label}</button>
+            ))}
+          </div>
+        </div>
+
+        {filtered.length === 0 ? (
+          <div className="g-empty">
+            <div className="g-empty-icon">📷</div>
+            <div className="g-empty-title">Aún no hay contenido</div>
+            <div className="g-empty-sub">¡Sé el primero en compartir una foto o video!</div>
+          </div>
+        ) : (
+          <div className="g-grid">
+            {filtered.map(item => (
+              <div key={item.id} className="g-card" onClick={()=>setViewItem(item)}>
+                {item.type === "foto"
+                  ? <img className="g-card-thumb" src={item.url} alt={item.title} onError={e=>e.target.style.display="none"}/>
+                  : <div className="g-card-video"><div className="g-card-play">▶</div></div>
+                }
+                <div className="g-card-body">
+                  <div className="g-card-title">{item.title}</div>
+                  <div className="g-card-meta">
+                    <span className="g-card-type">{item.type === "foto" ? "📷 Foto" : "🎥 Video"}</span>
+                    <span>{new Date(item.created_at).toLocaleDateString("es")}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* FOOTER */}
+      <div className="g-footer">
+        SomosGTA · Grupo de Tiendas Asociadas S.A.
+      </div>
+
+      {/* MODAL VER */}
+      {viewItem && (
+        <div className="g-modal-overlay" onClick={e=>e.target===e.currentTarget&&setViewItem(null)}>
+          <div className="g-modal">
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:700,color:"#1a1a2e",marginBottom:16}}>{viewItem.title}</div>
+            {viewItem.type === "foto"
+              ? <img src={viewItem.url} alt={viewItem.title} style={{width:"100%",borderRadius:12,maxHeight:420,objectFit:"contain",background:"#f5f5f5"}}/>
+              : <video src={viewItem.url} controls style={{width:"100%",borderRadius:12,maxHeight:360}}/>
+            }
+            <div style={{marginTop:12,fontSize:12,color:"#aaa",fontFamily:"'DM Sans',sans-serif"}}>
+              {new Date(viewItem.created_at).toLocaleDateString("es", {day:"numeric",month:"long",year:"numeric"})}
+            </div>
+            <div className="g-actions">
+              <button className="g-btn g-btn-ghost" onClick={()=>setViewItem(null)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL SUBIR */}
+      {showUpload && (
+        <div className="g-modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowUpload(false)}>
+          <div className="g-modal g-upload-modal">
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:800,color:"#1a1a2e",marginBottom:4}}>Compartir archivo</div>
+            <div style={{fontSize:13,color:"#aaa",marginBottom:24,fontFamily:"'DM Sans',sans-serif"}}>Tu contenido será visible para todos los visitantes.</div>
+            <div className="g-field">
+              <label>Título *</label>
+              <input type="text" placeholder="Describe brevemente tu archivo" value={uploadForm.title} onChange={e=>setUploadForm(f=>({...f,title:e.target.value}))}/>
+            </div>
+            <div className="g-field">
+              <label>Tipo de archivo</label>
+              <select value={uploadForm.type} onChange={e=>setUploadForm(f=>({...f,type:e.target.value,file:null}))}>
+                <option value="foto">📷 Foto (JPG, PNG — máx 10MB)</option>
+                <option value="video">🎥 Video (MP4, MOV — máx 50MB)</option>
+              </select>
+            </div>
+            <div className="g-field">
+              <label>Archivo *</label>
+              <label className="g-drop-zone" style={{display:"block"}}>
+                <input type="file" accept={uploadForm.type==="foto"?"image/*":"video/*"} style={{display:"none"}} onChange={e=>setUploadForm(f=>({...f,file:e.target.files[0]}))}/>
+                <div className="g-drop-icon">{uploadForm.file ? "✅" : uploadForm.type==="foto" ? "🖼️" : "🎬"}</div>
+                <div className="g-drop-text">{uploadForm.file ? uploadForm.file.name : "Clic para seleccionar archivo"}</div>
+                <div className="g-drop-hint">{uploadForm.type==="foto" ? "JPG, PNG, WEBP · máx 10MB" : "MP4, MOV, WEBM · máx 50MB"}</div>
+              </label>
+            </div>
+            <div className="g-actions">
+              <button className="g-btn g-btn-ghost" onClick={()=>setShowUpload(false)}>Cancelar</button>
+              <button className="g-btn g-btn-primary" onClick={handleUpload} disabled={uploading}>
+                {uploading ? "Subiendo…" : "Compartir"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {guestToast && (
+        <div className={`g-toast g-toast-${guestToast.type}`} key={guestToast.key}>
+          <span style={{fontWeight:700,color:guestToast.type==="success"?"#22c55e":guestToast.type==="error"?"#ef4444":heroColorStart}}>
+            {guestToast.type==="success"?"✓":guestToast.type==="error"?"✕":"ℹ"}
+          </span>
+          {guestToast.msg}
+        </div>
+      )}
+    </div>
+    </>
+  );
+}
+
 
 function EmployeePortal({ user }) {
   const [section, setSection] = useState("inicio");
@@ -1248,7 +1719,6 @@ function EmployeePortal({ user }) {
     return () => clearInterval(t);
   }, [config.carousel_images]);
 
-  // Calendar helpers
   const firstDay = new Date(calYear, calMonth, 1).getDay();
   const daysInMonth = new Date(calYear, calMonth+1, 0).getDate();
   const today = new Date();
@@ -1382,7 +1852,6 @@ function EmployeePortal({ user }) {
   return (
     <><style>{css}</style><style>{portalCss}</style>
     <div className="portal">
-      {/* SIDEBAR */}
       <aside className="portal-sidebar">
         <div className="portal-sidebar-brand">
           <Logo size={32}/>
@@ -1414,7 +1883,6 @@ function EmployeePortal({ user }) {
         </div>
       </aside>
 
-      {/* MAIN */}
       <div className="portal-main">
         <div className="portal-topbar">
           <div className="portal-section-heading">{sectionTitles[section]}</div>
@@ -1422,8 +1890,6 @@ function EmployeePortal({ user }) {
         </div>
 
         <div className="portal-content">
-
-          {/* ── INICIO ── */}
           {section === "inicio" && <>
             <div className="portal-hero" style={{background:`linear-gradient(135deg,${config.hero_color_start},${config.hero_color_end})`,backgroundImage:config.hero_bg_image?`url(${config.hero_bg_image})`:"none",backgroundSize:"cover",backgroundPosition:"center"}}>
               <div style={{position:"absolute",inset:0,background:`linear-gradient(135deg,${config.hero_color_start}cc,${config.hero_color_end}cc)`,borderRadius:18}}/>
@@ -1510,7 +1976,6 @@ function EmployeePortal({ user }) {
             <div style={{textAlign:"center",padding:"20px 0",borderTop:"1px solid #e8edf2",color:"#ccc",fontSize:12}}>{config.footer_text}</div>
           </>}
 
-          {/* ── ANUNCIOS ── */}
           {section === "announcements" && <>
             {announcements.length === 0 && <div className="portal-empty"><div style={{fontSize:40,marginBottom:10}}>📢</div>No hay anuncios activos</div>}
             {announcements.map(a=>{
@@ -1534,7 +1999,6 @@ function EmployeePortal({ user }) {
             })}
           </>}
 
-          {/* ── EVENTOS ── */}
           {section === "events" && <>
             <div className="table-card" style={{background:"#fff",border:"1px solid #e8edf2",marginBottom:20}}>
               <div style={{padding:"14px 18px",borderBottom:"1px solid #e8edf2",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
@@ -1578,7 +2042,6 @@ function EmployeePortal({ user }) {
             </div>
           </>}
 
-          {/* ── GALERÍA ── */}
           {section === "gallery" && (()=>{
             const isInFolder = activeFolder && !activeFolder.includes("/");
             const isInSub = activeFolder?.includes("/");
@@ -1602,7 +2065,6 @@ function EmployeePortal({ user }) {
             const countAllInFolder = (fname) => gallery.filter(g=>g.folder===fname||g.folder?.startsWith(fname+"/")).length;
 
             return <>
-              {/* BREADCRUMB */}
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20,fontSize:13}}>
                 <button onClick={()=>setActiveFolder(null)} style={{background:"none",border:"none",cursor:"pointer",color:!activeFolder?"#1a1a2e":C.blue,fontWeight:!activeFolder?700:500,fontSize:13,padding:0,display:"flex",alignItems:"center",gap:4}}>
                   🏠 Mi Galería
@@ -1619,7 +2081,6 @@ function EmployeePortal({ user }) {
                 </>}
               </div>
 
-              {/* ACCIONES */}
               <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginBottom:20}}>
                 {!isInSub && <button className="btn-portal btn-portal-ghost" onClick={()=>setShowNewFolder(true)}>
                   📁 {!activeFolder?"Nueva Carpeta":"Nueva Subcarpeta"}
@@ -1627,7 +2088,6 @@ function EmployeePortal({ user }) {
                 <button className="btn-portal btn-portal-blue" onClick={()=>setShowUpload(true)}>+ Subir Archivo</button>
               </div>
 
-              {/* TARJETAS DE CARPETAS */}
               {!activeFolder && rootFolderNames.length > 0 && (
                 <div style={{marginBottom:28}}>
                   <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:14,fontWeight:700,color:"#888",marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
@@ -1650,7 +2110,6 @@ function EmployeePortal({ user }) {
                 </div>
               )}
 
-              {/* TARJETAS DE SUBCARPETAS */}
               {isInFolder && subFolderNames.length > 0 && (
                 <div style={{marginBottom:28}}>
                   <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:14,fontWeight:700,color:"#888",marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
@@ -1672,7 +2131,6 @@ function EmployeePortal({ user }) {
                 </div>
               )}
 
-              {/* ARCHIVOS */}
               {currentItems.length > 0 && (
                 <div>
                   <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:14,fontWeight:700,color:"#888",marginBottom:14,display:"flex",alignItems:"center",gap:8}}>
@@ -1703,11 +2161,9 @@ function EmployeePortal({ user }) {
               )}
             </>;
           })()}
-
         </div>
       </div>
 
-      {/* MODAL EVENTO */}
       {viewEvent && (
         <div className="modal-overlay-light" onClick={e=>e.target===e.currentTarget&&setViewEvent(null)}>
           <div className="modal-light" style={{maxWidth:520}}>
@@ -1725,7 +2181,6 @@ function EmployeePortal({ user }) {
         </div>
       )}
 
-      {/* MODAL ANUNCIO */}
       {selectedAnn && (
         <div className="modal-overlay-light" onClick={e=>e.target===e.currentTarget&&setSelectedAnn(null)}>
           <div className="modal-light">
@@ -1742,7 +2197,6 @@ function EmployeePortal({ user }) {
         </div>
       )}
 
-      {/* MODAL VER MEDIA */}
       {viewItem && (
         <div className="modal-overlay-light" onClick={e=>e.target===e.currentTarget&&setViewItem(null)}>
           <div className="modal-light" style={{maxWidth:640}}>
@@ -1757,7 +2211,6 @@ function EmployeePortal({ user }) {
         </div>
       )}
 
-      {/* MODAL NUEVA CARPETA */}
       {showNewFolder && (
         <div className="modal-overlay-light" onClick={e=>e.target===e.currentTarget&&setShowNewFolder(false)}>
           <div className="modal-light" style={{maxWidth:400}}>
@@ -1777,7 +2230,6 @@ function EmployeePortal({ user }) {
         </div>
       )}
 
-      {/* MODAL SUBIR ARCHIVO */}
       {showUpload && (
         <div className="modal-overlay-light" onClick={e=>e.target===e.currentTarget&&setShowUpload(false)}>
           <div className="modal-light" style={{maxWidth:480}}>
@@ -1829,8 +2281,17 @@ export default function App() {
   const [logoUrl, setLogoUrl] = useState(LOGO_URL);
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isGuestRoute, setIsGuestRoute] = useState(false);
 
   const showToast = (msg, type="info") => setToast({ msg, type, key: Date.now() });
+
+  // ── Detección de ruta guest ──
+  useEffect(() => {
+    const checkHash = () => setIsGuestRoute(window.location.hash === "#/guest");
+    checkHash();
+    window.addEventListener("hashchange", checkHash);
+    return () => window.removeEventListener("hashchange", checkHash);
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -1864,6 +2325,9 @@ export default function App() {
       default: return null;
     }
   };
+
+  // ── Si es ruta guest, mostrar portal público directamente ──
+  if (isGuestRoute) return <GuestPortal />;
 
   if (loading) return (
     <><style>{css}</style>
