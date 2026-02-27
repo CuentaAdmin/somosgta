@@ -1418,7 +1418,7 @@ function GuestPortal() {
     body { background: #f8f9fb; color: #1a1a2e; font-family: 'DM Sans', sans-serif; min-height: 100vh; }
     ::-webkit-scrollbar { width: 5px; }
     ::-webkit-scrollbar-thumb { background: ${heroColorStart}; border-radius: 10px; }
-    .g-wrap { min-height: 100vh; background: #f8f9fb; }
+    .g-wrap { min-height: 100vh; background: #f8f9fb; width: 100%; overflow-x: hidden; }
     .g-nav { position: sticky; top: 0; z-index: 100; backdrop-filter: blur(16px); background: rgba(248,249,251,0.85); border-bottom: 1px solid rgba(0,0,0,0.06); padding: 14px 40px; display: flex; align-items: center; justify-content: space-between; }
     .g-nav-brand { display: flex; align-items: center; gap: 10px; }
     .g-nav-title { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 18px; color: #1a1a2e; }
