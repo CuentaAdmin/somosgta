@@ -1616,7 +1616,7 @@ function GuestPortal() {
             <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:800,color:"#1a1a2e",marginBottom:4}}>Compartir archivo</div>
             <div style={{fontSize:13,color:"#aaa",marginBottom:24,fontFamily:"'DM Sans',sans-serif"}}>Tu contenido será visible para todos los visitantes.</div>
             <div className="g-field">
-              <label>Título *</label>
+              <label>Nombra tu foto/video*</label>
               <input type="text" placeholder="Describe brevemente tu archivo" value={uploadForm.title} onChange={e=>setUploadForm(f=>({...f,title:e.target.value}))}/>
             </div>
             <div className="g-field">
