@@ -287,7 +287,6 @@ function Dashboard({ users }) {
                 <td><span className={`role-badge role-${u.role}`}>{ROLE_LABELS[u.role]}</span></td>
                 <td style={{color:C.muted,fontSize:13}}>{u.area}</td>
                 <td><span className="status-dot"><span className={`dot ${u.active?"active":"inactive"}`}/>{u.active?"Activo":"Inactivo"}</span></td>
-                {isSA && <td><button className="btn-sm btn-ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>{setEditingUser({...u});setShowEdit(true);}}>✏️ Editar</button></td>}
               </tr>
             ))}
           </tbody>
@@ -427,6 +426,7 @@ function UserManagement({ users, setUsers, showToast, currentUser }) {
                 <td><span className={`role-badge role-${u.role}`}>{ROLE_LABELS[u.role]}</span></td>
                 <td style={{color:C.muted,fontSize:13}}>{u.area}</td>
                 <td><span className="status-dot"><span className={`dot ${u.active?"active":"inactive"}`}/>{u.active?"Activo":"Inactivo"}</span></td>
+                {isSA && <td><button className="btn-sm btn-ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>{setEditingUser({...u});setShowEdit(true);}}>✏️ Editar</button></td>}
               </tr>
             ))}
           </tbody>
