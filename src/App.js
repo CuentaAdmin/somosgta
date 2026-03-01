@@ -2757,13 +2757,12 @@ function EmployeePortal({ user }) {
               )}
             </>;
           })()}
+
+          {section === "attendance" && user.can_attendance && (
+            <EmployeeAttendanceSection showToast={showUpToast}/>
+          )}
         </div>
       </div>
-
-      {/* ASISTENCIA EMPLEADO */}
-      {section === "attendance" && user.can_attendance && (
-        <EmployeeAttendanceSection showToast={showUpToast}/>
-      )}
 
       {viewEvent && (
         <div className="modal-overlay-light" onClick={e=>e.target===e.currentTarget&&setViewEvent(null)}>
