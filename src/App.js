@@ -287,6 +287,7 @@ function Dashboard({ users }) {
                 <td><span className={`role-badge role-${u.role}`}>{ROLE_LABELS[u.role]}</span></td>
                 <td style={{color:C.muted,fontSize:13}}>{u.area}</td>
                 <td><span className="status-dot"><span className={`dot ${u.active?"active":"inactive"}`}/>{u.active?"Activo":"Inactivo"}</span></td>
+                {isSA && <td><button className="btn-sm btn-ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>{setEditingUser({...u});setShowEdit(true);}}>✏️ Editar</button></td>}
               </tr>
             ))}
           </tbody>
@@ -302,6 +303,8 @@ function UserManagement({ users, setUsers, showToast, currentUser }) {
   const [selected, setSelected] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [showCsv, setShowCsv] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
   const [saving, setSaving] = useState(false);
   const [newUser, setNewUser] = useState({ name:"", email:"", role:"empleado", area:"Ventas", password:"" });
   const isSA = currentUser.role === "superadmin";
@@ -323,6 +326,24 @@ function UserManagement({ users, setUsers, showToast, currentUser }) {
     setUsers(u => u.map(x => selected.includes(x.id) ? {...x, active:val} : x));
     showToast(`${selected.length} usuario(s) ${val?"activados":"desactivados"}`, "success");
     setSelected([]);
+    setSaving(false);
+  };
+
+  const saveEditUser = async () => {
+    if (!editingUser.name) { showToast("El nombre es obligatorio","error"); return; }
+    setSaving(true);
+    const { error } = await supabase.from("profiles").update({
+      name: editingUser.name,
+      role: editingUser.role,
+      area: editingUser.area,
+      active: editingUser.active,
+      can_attendance: editingUser.can_attendance || false,
+    }).eq("id", editingUser.id);
+    if (error) { showToast("Error al guardar: "+error.message,"error"); setSaving(false); return; }
+    setUsers(u => u.map(x => x.id === editingUser.id ? {...x, ...editingUser} : x));
+    showToast(`${editingUser.name} actualizado`, "success");
+    setShowEdit(false);
+    setEditingUser(null);
     setSaving(false);
   };
 
@@ -394,6 +415,7 @@ function UserManagement({ users, setUsers, showToast, currentUser }) {
             <tr>
               {isSA && <th className="checkbox-cell"><input type="checkbox" onChange={toggleAll} checked={selected.length===filtered.length&&filtered.length>0}/></th>}
               <th>Nombre</th><th>Correo</th><th>Rol</th><th>Área</th><th>Estado</th>
+              {isSA && <th>Acciones</th>}
             </tr>
           </thead>
           <tbody>
@@ -455,6 +477,56 @@ function UserManagement({ users, setUsers, showToast, currentUser }) {
             <div className="modal-actions">
               <button className="btn-sm btn-ghost" onClick={()=>setShowCreate(false)}>Cancelar</button>
               <button className="btn-sm btn-blue" onClick={createUser} disabled={saving}>{saving?"Creando…":"Crear Usuario"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showEdit && editingUser && (
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowEdit(false)}>
+          <div className="modal" style={{maxWidth:520}}>
+            <div className="modal-title">✏️ Editar Usuario</div>
+            <div className="field">
+              <label>Nombre completo</label>
+              <input type="text" value={editingUser.name} onChange={e=>setEditingUser(u=>({...u,name:e.target.value}))}/>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div className="field">
+                <label>Rol</label>
+                <select value={editingUser.role} onChange={e=>setEditingUser(u=>({...u,role:e.target.value}))}>
+                  <option value="empleado">Empleado</option>
+                  <option value="admin">Admin de Área</option>
+                  <option value="superadmin">Superadmin</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>Área</label>
+                <select value={editingUser.area} onChange={e=>setEditingUser(u=>({...u,area:e.target.value}))}>
+                  {AREAS.map(a=><option key={a}>{a}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:8}}>
+              <div style={{fontFamily:"'Exo 2',sans-serif",fontWeight:700,fontSize:13,color:C.blue,marginBottom:4}}>Permisos especiales</div>
+              {[
+                {key:"active", label:"Cuenta activa", desc:"El usuario puede iniciar sesión", color:C.green},
+                {key:"can_attendance", label:"Puede registrar asistencia", desc:"Verá el módulo de asistencia en su portal", color:C.orange},
+              ].map(perm => (
+                <div key={perm.key} onClick={()=>setEditingUser(u=>({...u,[perm.key]:!u[perm.key]}))}
+                  style={{display:"flex",alignItems:"center",gap:14,padding:"14px 16px",borderRadius:10,cursor:"pointer",border:`2px solid ${editingUser[perm.key]?perm.color:C.border}`,background:editingUser[perm.key]?`${perm.color}12`:C.darker,transition:"all 0.2s"}}>
+                  <div style={{width:22,height:22,borderRadius:6,background:editingUser[perm.key]?perm.color:C.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:"#fff",fontWeight:700,flexShrink:0,transition:"all 0.2s"}}>
+                    {editingUser[perm.key]?"✓":""}
+                  </div>
+                  <div>
+                    <div style={{fontSize:14,fontWeight:600,color:editingUser[perm.key]?perm.color:C.text}}>{perm.label}</div>
+                    <div style={{fontSize:11,color:C.muted,marginTop:2}}>{perm.desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="modal-actions">
+              <button className="btn-sm btn-ghost" onClick={()=>setShowEdit(false)}>Cancelar</button>
+              <button className="btn-sm btn-blue" onClick={saveEditUser} disabled={saving}>{saving?"Guardando…":"Guardar cambios"}</button>
             </div>
           </div>
         </div>
@@ -1660,6 +1732,170 @@ function GuestPortal() {
 }
 
 
+// ── ASISTENCIA EMPLEADO (vista reducida) ─────────────────────
+function EmployeeAttendanceSection({ showToast }) {
+  const [attendees, setAttendees] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState("");
+  const [results, setResults] = useState([]);
+  const [filterTab, setFilterTab] = useState("all");
+
+  useEffect(() => {
+    supabase.from("attendees").select("*").order("name").then(({ data }) => {
+      if (data) setAttendees(data);
+      setLoading(false);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!search.trim()) { setResults([]); return; }
+    const q = search.trim().toLowerCase();
+    setResults(attendees.filter(a =>
+      a.name?.toLowerCase().includes(q) ||
+      a.dpi?.toLowerCase().includes(q) ||
+      a.factus_code?.toLowerCase().includes(q) ||
+      a.sima_code?.toLowerCase().includes(q) ||
+      a.store_name?.toLowerCase().includes(q)
+    ));
+  }, [search, attendees]);
+
+  const handleKey = async (e) => {
+    if (e.key === "Enter" && results.length > 0) {
+      const first = results.find(r => !r.attended) || results[0];
+      await markAttended(first);
+      setSearch(""); setResults([]);
+    }
+  };
+
+  const markAttended = async (a) => {
+    if (a.attended) { showToast(`${a.name} ya registró asistencia`, "info"); return; }
+    setSaving(true);
+    const now = new Date().toISOString();
+    const { error } = await supabase.from("attendees").update({ attended:true, attended_at:now }).eq("id", a.id);
+    if (error) { showToast("Error: "+error.message,"error"); setSaving(false); return; }
+    setAttendees(prev => prev.map(x => x.id===a.id ? {...x,attended:true,attended_at:now} : x));
+    setResults(prev => prev.map(x => x.id===a.id ? {...x,attended:true,attended_at:now} : x));
+    showToast(`✓ ${a.name} registrado`,"success");
+    setSaving(false);
+  };
+
+  const total = attendees.length;
+  const attended = attendees.filter(a => a.attended).length;
+  const pending = total - attended;
+  const pct = total > 0 ? Math.round((attended/total)*100) : 0;
+  const listToShow = attendees.filter(a => filterTab==="all" ? true : filterTab==="attended" ? a.attended : !a.attended);
+
+  return (
+    <div>
+      {/* STATS */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:20}}>
+        {[
+          {label:"Total",value:total,color:"#1a1a2e"},
+          {label:"Asistieron",value:attended,color:C.green},
+          {label:"Pendientes",value:pending,color:C.orange},
+        ].map(s=>(
+          <div key={s.label} style={{background:"#fff",borderRadius:12,padding:"16px",textAlign:"center",boxShadow:"0 2px 10px rgba(0,0,0,0.06)"}}>
+            <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:28,fontWeight:900,color:s.color}}>{s.value}</div>
+            <div style={{fontSize:12,color:"#aaa",marginTop:2}}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* BARRA PROGRESO */}
+      <div style={{background:"#fff",borderRadius:12,padding:"14px 18px",marginBottom:20,boxShadow:"0 2px 10px rgba(0,0,0,0.06)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#888",marginBottom:8}}>
+          <span>Progreso</span><span style={{color:C.green,fontWeight:700}}>{pct}%</span>
+        </div>
+        <div style={{height:8,background:"#e8edf2",borderRadius:4,overflow:"hidden"}}>
+          <div style={{height:"100%",width:`${pct}%`,background:`linear-gradient(90deg,${C.blue},${C.green})`,borderRadius:4,transition:"width 0.5s ease"}}/>
+        </div>
+      </div>
+
+      {/* BUSCADOR */}
+      <div style={{background:"#fff",borderRadius:14,padding:20,marginBottom:20,boxShadow:"0 2px 10px rgba(0,0,0,0.06)"}}>
+        <div style={{fontFamily:"'Exo 2',sans-serif",fontWeight:700,fontSize:14,color:"#1a1a2e",marginBottom:4}}>🔍 Buscar y registrar</div>
+        <div style={{fontSize:12,color:"#aaa",marginBottom:12}}>Nombre, DPI, FACTUS, SIMA o tienda. Lector de barras: escanea y Enter.</div>
+        <div style={{position:"relative",marginBottom:12}}>
+          <input
+            autoFocus
+            type="text"
+            placeholder="Buscar invitado…"
+            value={search}
+            onChange={e=>setSearch(e.target.value)}
+            onKeyDown={handleKey}
+            style={{width:"100%",border:`2px solid ${search?C.blue:"#e8edf2"}`,borderRadius:10,padding:"12px 16px",fontSize:14,color:"#1a1a2e",outline:"none",fontFamily:"'Inter',sans-serif",transition:"border-color 0.2s"}}
+          />
+          {search && <button onClick={()=>{setSearch("");setResults([]);}} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#aaa",cursor:"pointer",fontSize:16}}>✕</button>}
+        </div>
+        {results.length > 0 && (
+          <div style={{border:"1.5px solid #e8edf2",borderRadius:10,overflow:"hidden"}}>
+            {results.map((a,i)=>(
+              <div key={a.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderBottom:i<results.length-1?"1px solid #f0f0f0":"none",background:a.attended?`${C.green}08`:i===0?`${C.blue}06`:"#fff"}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:3}}>
+                    <span style={{fontWeight:600,fontSize:14,color:"#1a1a2e"}}>{a.name}</span>
+                    {a.attended && <span style={{background:`${C.green}20`,color:C.green,fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20}}>✓ {a.attended_at?new Date(a.attended_at).toLocaleTimeString("es",{hour:"2-digit",minute:"2-digit"}):""}</span>}
+                    {i===0&&!a.attended&&<span style={{background:`${C.blue}15`,color:C.blue,fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20}}>↵ Enter</span>}
+                  </div>
+                  <div style={{fontSize:11,color:"#aaa",display:"flex",gap:8,flexWrap:"wrap"}}>
+                    {a.store_name&&<span>🏪 {a.store_name}</span>}
+                    {a.area&&<span>🏢 {a.area}</span>}
+                    {a.factus_code&&<span>F:{a.factus_code}</span>}
+                    {a.sima_code&&<span>S:{a.sima_code}</span>}
+                  </div>
+                </div>
+                {!a.attended
+                  ? <button className="btn-portal btn-portal-blue" onClick={()=>markAttended(a)} disabled={saving} style={{fontSize:12,padding:"8px 14px"}}>✓ Registrar</button>
+                  : <span style={{fontSize:12,color:C.green,fontWeight:600}}>✓ Asistió</span>
+                }
+              </div>
+            ))}
+          </div>
+        )}
+        {search && results.length===0 && (
+          <div style={{padding:14,background:"#f8f9fb",borderRadius:10,fontSize:13,color:"#aaa",textAlign:"center"}}>No se encontró "{search}"</div>
+        )}
+      </div>
+
+      {/* LISTA */}
+      <div style={{background:"#fff",borderRadius:14,overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,0.06)"}}>
+        <div style={{padding:"14px 18px",borderBottom:"1px solid #e8edf2",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+          <div style={{fontFamily:"'Exo 2',sans-serif",fontWeight:700,fontSize:14,color:"#1a1a2e"}}>Lista de invitados</div>
+          <div style={{display:"flex",gap:4,background:"#f5f7fa",borderRadius:100,padding:4}}>
+            {[["all","Todos"],["attended","Asistieron"],["pending","Pendientes"]].map(([val,label])=>(
+              <button key={val} onClick={()=>setFilterTab(val)} style={{padding:"5px 14px",borderRadius:100,border:"none",cursor:"pointer",fontSize:11,fontWeight:600,background:filterTab===val?C.blue:"transparent",color:filterTab===val?"#fff":"#888",transition:"all 0.15s"}}>{label}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{maxHeight:400,overflowY:"auto"}}>
+          {loading && <div style={{padding:20,textAlign:"center",color:"#aaa"}}>Cargando…</div>}
+          {listToShow.map(a=>(
+            <div key={a.id} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 18px",borderBottom:"1px solid #f5f5f5",background:a.attended?`${C.green}05`:"#fff"}}>
+              <div style={{width:8,height:8,borderRadius:"50%",background:a.attended?C.green:"#e0e0e0",flexShrink:0}}/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:500,fontSize:13,color:"#1a1a2e"}}>{a.name}</div>
+                <div style={{fontSize:11,color:"#aaa",display:"flex",gap:8,flexWrap:"wrap"}}>
+                  {a.store_name&&<span>🏪 {a.store_name}</span>}
+                  {a.area&&<span>{a.area}</span>}
+                  {a.attended&&a.attended_at&&<span style={{color:C.green}}>✓ {new Date(a.attended_at).toLocaleTimeString("es",{hour:"2-digit",minute:"2-digit"})}</span>}
+                </div>
+              </div>
+              {!a.attended && (
+                <button onClick={()=>markAttended(a)} disabled={saving} style={{background:C.green,color:"#fff",border:"none",borderRadius:8,padding:"6px 12px",fontSize:11,fontWeight:600,cursor:"pointer"}}>✓</button>
+              )}
+            </div>
+          ))}
+        </div>
+        <div style={{padding:"12px 18px",borderTop:"1px solid #e8edf2",display:"flex",justifyContent:"space-between",fontSize:12,color:"#aaa"}}>
+          <span>{listToShow.length} registro(s)</span>
+          <span style={{color:C.green}}>{attended} confirmados</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── ASISTENCIA ───────────────────────────────────────────────
 function AttendanceModule({ currentUser }) {
   const [attendees, setAttendees] = useState([]);
@@ -2199,7 +2435,7 @@ function EmployeePortal({ user }) {
     .cal-cell.is-today { background:${C.blue}20; border:1.5px solid ${C.blue}; }
   `;
 
-  const sectionTitles = { inicio:"Inicio", events:"Eventos", announcements:"Anuncios", gallery:"Mi Galería" };
+  const sectionTitles = { inicio:"Inicio", events:"Eventos", announcements:"Anuncios", gallery:"Mi Galería", attendance:"Asistencia" };
 
   if (loading) return (
     <><style>{portalCss}</style>
@@ -2222,6 +2458,7 @@ function EmployeePortal({ user }) {
             {id:"announcements",icon:"📢",label:"Anuncios", badge: announcements.filter(a=>a.priority==="urgente").length||null},
             {id:"events",icon:"📅",label:"Eventos"},
             {id:"gallery",icon:"🖼️",label:"Mi Galería"},
+            ...(user.can_attendance ? [{id:"attendance",icon:"✅",label:"Asistencia"}] : []),
           ].map(item=>(
             <button key={item.id} className={`portal-nav-item ${section===item.id?"active":""}`} onClick={()=>setSection(item.id)}>
               <span className="portal-nav-icon">{item.icon}</span>
@@ -2522,6 +2759,11 @@ function EmployeePortal({ user }) {
           })()}
         </div>
       </div>
+
+      {/* ASISTENCIA EMPLEADO */}
+      {section === "attendance" && user.can_attendance && (
+        <EmployeeAttendanceSection showToast={showUpToast}/>
+      )}
 
       {viewEvent && (
         <div className="modal-overlay-light" onClick={e=>e.target===e.currentTarget&&setViewEvent(null)}>
