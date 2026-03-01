@@ -209,6 +209,7 @@ function Sidebar({ user, active, setActive, onLogout, logoUrl }) {
     { id:"events", icon:"📅", label:"Eventos" },
     { id:"processes", icon:"📋", label:"Procesos" },
     { id:"gallery", icon:"🖼️", label:"Galería" },
+    { id:"attendance", icon:"✅", label:"Asistencia" },
   ];
   const adminItems = [
     { id:"users", icon:"👥", label:"Usuarios" },
@@ -1659,6 +1660,364 @@ function GuestPortal() {
 }
 
 
+// ── ASISTENCIA ───────────────────────────────────────────────
+function AttendanceModule({ currentUser }) {
+  const [attendees, setAttendees] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState("");
+  const [results, setResults] = useState([]);
+  const [showAdd, setShowAdd] = useState(false);
+  const [showCsv, setShowCsv] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [attToast, setAttToast] = useState(null);
+  const [viewAll, setViewAll] = useState(false);
+  const [filterTab, setFilterTab] = useState("all"); // all | attended | pending
+  const searchRef = useState(null);
+  const inputRef = { current: null };
+  const [newAttendee, setNewAttendee] = useState({
+    name:"", dpi:"", factus_code:"", sima_code:"", area:"", position:"", store_name:""
+  });
+
+  const showAttToast = (msg, type="info") => setAttToast({ msg, type, key: Date.now() });
+
+  useEffect(() => {
+    supabase.from("attendees").select("*").order("name").then(({ data }) => {
+      if (data) setAttendees(data);
+      setLoading(false);
+    });
+  }, []);
+
+  // Búsqueda en tiempo real — nombre, DPI, FACTUS, SIMA simultáneamente
+  useEffect(() => {
+    if (!search.trim()) { setResults([]); return; }
+    const q = search.trim().toLowerCase();
+    const found = attendees.filter(a =>
+      a.name?.toLowerCase().includes(q) ||
+      a.dpi?.toLowerCase().includes(q) ||
+      a.factus_code?.toLowerCase().includes(q) ||
+      a.sima_code?.toLowerCase().includes(q) ||
+      a.store_name?.toLowerCase().includes(q)
+    );
+    setResults(found);
+  }, [search, attendees]);
+
+  // Lector de barras: Enter sobre el input marca al primer resultado no asistido
+  const handleSearchKey = async (e) => {
+    if (e.key === "Enter" && results.length > 0) {
+      const first = results.find(r => !r.attended) || results[0];
+      await markAttended(first);
+      setSearch("");
+      setResults([]);
+    }
+  };
+
+  const markAttended = async (attendee) => {
+    if (attendee.attended) { showAttToast(`${attendee.name} ya registró asistencia`, "info"); return; }
+    setSaving(true);
+    const now = new Date().toISOString();
+    const { error } = await supabase.from("attendees")
+      .update({ attended: true, attended_at: now })
+      .eq("id", attendee.id);
+    if (error) { showAttToast("Error al registrar: " + error.message, "error"); setSaving(false); return; }
+    setAttendees(prev => prev.map(a => a.id === attendee.id ? {...a, attended:true, attended_at:now} : a));
+    setResults(prev => prev.map(a => a.id === attendee.id ? {...a, attended:true, attended_at:now} : a));
+    showAttToast(`✓ ${attendee.name} registrado`, "success");
+    setSaving(false);
+  };
+
+  const unmarkAttended = async (attendee) => {
+    if (!window.confirm(`¿Quitar asistencia de ${attendee.name}?`)) return;
+    const { error } = await supabase.from("attendees")
+      .update({ attended: false, attended_at: null })
+      .eq("id", attendee.id);
+    if (error) { showAttToast("Error: " + error.message, "error"); return; }
+    setAttendees(prev => prev.map(a => a.id === attendee.id ? {...a, attended:false, attended_at:null} : a));
+    showAttToast(`${attendee.name} desmarcado`, "info");
+  };
+
+  const addAttendee = async () => {
+    if (!newAttendee.name.trim()) { showAttToast("El nombre es obligatorio","error"); return; }
+    setSaving(true);
+    const { data, error } = await supabase.from("attendees").insert({
+      name: newAttendee.name.trim(),
+      dpi: newAttendee.dpi.trim()||null,
+      factus_code: newAttendee.factus_code.trim()||null,
+      sima_code: newAttendee.sima_code.trim()||null,
+      area: newAttendee.area.trim()||null,
+      position: newAttendee.position.trim()||null,
+      store_name: newAttendee.store_name.trim()||null,
+    }).select().single();
+    if (error) { showAttToast("Error: "+error.message,"error"); setSaving(false); return; }
+    setAttendees(prev => [...prev, data].sort((a,b)=>a.name.localeCompare(b.name)));
+    showAttToast(`${data.name} agregado`, "success");
+    setShowAdd(false);
+    setNewAttendee({ name:"", dpi:"", factus_code:"", sima_code:"", area:"", position:"", store_name:"" });
+    setSaving(false);
+  };
+
+  const handleCsvImport = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const text = await file.text();
+    const lines = text.split("\n").filter(l => l.trim()).slice(1); // skip header
+    setImporting(true);
+    let count = 0;
+    const batch = [];
+    for (const line of lines) {
+      const cols = line.split(",").map(s => s.trim().replace(/^"|"$/g,""));
+      const [name, dpi, factus_code, sima_code, area, position, store_name] = cols;
+      if (!name) continue;
+      batch.push({
+        name, dpi:dpi||null, factus_code:factus_code||null,
+        sima_code:sima_code||null, area:area||null,
+        position:position||null, store_name:store_name||null
+      });
+    }
+    // Insertar en lotes de 100
+    for (let i = 0; i < batch.length; i += 100) {
+      const chunk = batch.slice(i, i+100);
+      const { data, error } = await supabase.from("attendees").insert(chunk).select();
+      if (!error && data) { count += data.length; setAttendees(prev => [...prev, ...data]); }
+    }
+    showAttToast(`${count} invitados importados`, "success");
+    setImporting(false);
+    setShowCsv(false);
+    e.target.value = "";
+  };
+
+  const exportCsv = () => {
+    const attended = attendees.filter(a => a.attended);
+    const header = "Nombre,DPI,FACTUS,SIMA,Área,Puesto,Tienda,Hora de registro\n";
+    const rows = attended.map(a =>
+      `"${a.name||""}","${a.dpi||""}","${a.factus_code||""}","${a.sima_code||""}","${a.area||""}","${a.position||""}","${a.store_name||""}","${a.attended_at ? new Date(a.attended_at).toLocaleString("es") : ""}"`
+    ).join("\n");
+    const blob = new Blob([header+rows], { type:"text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `asistencia_${new Date().toLocaleDateString("es").replace(/\//g,"-")}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  };
+
+  const total = attendees.length;
+  const attended = attendees.filter(a => a.attended).length;
+  const pending = total - attended;
+  const pct = total > 0 ? Math.round((attended/total)*100) : 0;
+
+  const listToShow = viewAll
+    ? attendees.filter(a =>
+        filterTab === "all" ? true :
+        filterTab === "attended" ? a.attended :
+        !a.attended
+      )
+    : [];
+
+  return (
+    <div>
+      {/* STATS */}
+      <div className="stats-grid" style={{marginBottom:24}}>
+        {[
+          { label:"Total invitados", value:total,    color:"blue",   icon:"👥" },
+          { label:"Asistieron",      value:attended,  color:"green",  icon:"✅" },
+          { label:"Pendientes",      value:pending,   color:"orange", icon:"⏳" },
+          { label:"% Asistencia",    value:pct+"%",   color:"yellow", icon:"📊" },
+        ].map(s => (
+          <div key={s.label} className={`stat-card ${s.color}`}>
+            <div className="stat-icon">{s.icon}</div>
+            <div className="stat-value" style={{color:s.color==="blue"?C.blue:s.color==="green"?C.green:s.color==="orange"?C.orange:C.yellow,fontSize:28}}>{s.value}</div>
+            <div className="stat-label">{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* BARRA DE PROGRESO */}
+      <div className="table-card" style={{padding:"16px 24px",marginBottom:20}}>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:8}}>
+          <span style={{color:C.muted}}>Progreso de asistencia</span>
+          <span style={{color:C.green,fontWeight:700}}>{attended} / {total}</span>
+        </div>
+        <div style={{height:8,background:C.border,borderRadius:4,overflow:"hidden"}}>
+          <div style={{height:"100%",width:`${pct}%`,background:`linear-gradient(90deg,${C.blue},${C.green})`,borderRadius:4,transition:"width 0.5s ease"}}/>
+        </div>
+      </div>
+
+      {/* BUSCADOR — zona principal de operación */}
+      <div className="table-card" style={{padding:24,marginBottom:20}}>
+        <div style={{fontFamily:"'Exo 2',sans-serif",fontWeight:700,fontSize:15,marginBottom:6}}>
+          🔍 Buscar y registrar asistencia
+        </div>
+        <div style={{fontSize:12,color:C.muted,marginBottom:16}}>
+          Escribe nombre, DPI, código FACTUS o SIMA. Con lector de barras: escanea el gafete y presiona Enter automáticamente.
+        </div>
+        <div style={{position:"relative",marginBottom:16}}>
+          <input
+            ref={el => inputRef.current = el}
+            autoFocus
+            type="text"
+            placeholder="Buscar invitado… o escanear código de barras"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            onKeyDown={handleSearchKey}
+            style={{width:"100%",background:C.darker,border:`2px solid ${search?C.blue:C.border}`,borderRadius:12,padding:"14px 20px",color:C.text,fontSize:15,outline:"none",transition:"border-color 0.2s",fontFamily:"'Inter',sans-serif"}}
+          />
+          {search && (
+            <button onClick={()=>{setSearch("");setResults([]);}} style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18}}>✕</button>
+          )}
+        </div>
+
+        {/* RESULTADOS DE BÚSQUEDA */}
+        {results.length > 0 && (
+          <div style={{border:`1px solid ${C.border}`,borderRadius:10,overflow:"hidden"}}>
+            {results.map((a, i) => (
+              <div key={a.id} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",borderBottom:i<results.length-1?`1px solid ${C.border}44`:"none",background:a.attended?`${C.green}08`:i===0?`${C.blue}08`:"transparent",transition:"background 0.15s"}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,flexWrap:"wrap"}}>
+                    <span style={{fontWeight:600,fontSize:14}}>{a.name}</span>
+                    {a.attended && <span style={{background:`${C.green}20`,color:C.green,fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20}}>✓ Asistió {a.attended_at ? new Date(a.attended_at).toLocaleTimeString("es",{hour:"2-digit",minute:"2-digit"}) : ""}</span>}
+                    {i===0 && !a.attended && <span style={{background:`${C.blue}20`,color:C.blue,fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20}}>↵ Enter para registrar</span>}
+                  </div>
+                  <div style={{display:"flex",gap:10,flexWrap:"wrap",fontSize:11,color:C.muted}}>
+                    {a.store_name && <span>🏪 {a.store_name}</span>}
+                    {a.area && <span>🏢 {a.area}</span>}
+                    {a.position && <span>💼 {a.position}</span>}
+                    {a.factus_code && <span>FACTUS: {a.factus_code}</span>}
+                    {a.sima_code && <span>SIMA: {a.sima_code}</span>}
+                    {a.dpi && <span>DPI: {a.dpi}</span>}
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:8,flexShrink:0}}>
+                  {!a.attended ? (
+                    <button className="btn-sm btn-green" onClick={()=>markAttended(a)} disabled={saving}>✓ Registrar</button>
+                  ) : (
+                    <button className="btn-sm btn-danger" onClick={()=>unmarkAttended(a)}>✕ Quitar</button>
+                  )}
+                </div>
+              </div>
+            ))}
+            {results.length === 0 && search && (
+              <div style={{padding:20,textAlign:"center",color:C.muted,fontSize:13}}>Sin resultados — puedes agregarlo manualmente</div>
+            )}
+          </div>
+        )}
+        {search && results.length === 0 && (
+          <div style={{padding:"16px",background:`${C.border}44`,borderRadius:10,fontSize:13,color:C.muted,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <span>No se encontró "{search}"</span>
+            <button className="btn-sm btn-blue" onClick={()=>{setShowAdd(true);setNewAttendee(n=>({...n,name:search}));}}>+ Agregar ahora</button>
+          </div>
+        )}
+      </div>
+
+      {/* ACCIONES */}
+      <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:20}}>
+        <button className="btn-sm btn-blue" onClick={()=>setShowAdd(true)}>+ Agregar invitado</button>
+        <button className="btn-sm btn-ghost" onClick={()=>setShowCsv(true)}>📂 Importar CSV</button>
+        <button className="btn-sm btn-ghost" onClick={exportCsv} disabled={attended===0}>⬇️ Exportar asistencia ({attended})</button>
+        <button className="btn-sm btn-ghost" onClick={()=>setViewAll(v=>!v)} style={{marginLeft:"auto"}}>
+          {viewAll ? "Ocultar lista" : "Ver lista completa"}
+        </button>
+      </div>
+
+      {/* LISTA COMPLETA */}
+      {viewAll && (
+        <div className="table-card">
+          <div className="table-header">
+            <div className="table-title">Lista de invitados</div>
+            <div style={{display:"flex",gap:4,background:C.darker,border:`1px solid ${C.border}`,borderRadius:8,padding:4}}>
+              {[["all","Todos"],["attended","Asistieron"],["pending","Pendientes"]].map(([val,label])=>(
+                <button key={val} onClick={()=>setFilterTab(val)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,background:filterTab===val?C.blue:"transparent",color:filterTab===val?"#fff":C.muted,transition:"all 0.15s"}}>{label}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{maxHeight:500,overflowY:"auto"}}>
+            {loading && <div style={{padding:20,textAlign:"center",color:C.muted}}>Cargando…</div>}
+            {!loading && listToShow.length === 0 && <div style={{padding:20,textAlign:"center",color:C.muted,fontSize:13}}>Sin resultados</div>}
+            {listToShow.map(a => (
+              <div key={a.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 20px",borderBottom:`1px solid ${C.border}44`,background:a.attended?`${C.green}06`:"transparent"}}>
+                <div style={{width:8,height:8,borderRadius:"50%",background:a.attended?C.green:C.muted,flexShrink:0,boxShadow:a.attended?`0 0 6px ${C.green}88`:"none"}}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:500,fontSize:14,marginBottom:2}}>{a.name}</div>
+                  <div style={{display:"flex",gap:10,fontSize:11,color:C.muted,flexWrap:"wrap"}}>
+                    {a.store_name && <span>🏪 {a.store_name}</span>}
+                    {a.area && <span>🏢 {a.area}</span>}
+                    {a.position && <span>💼 {a.position}</span>}
+                    {a.factus_code && <span>F:{a.factus_code}</span>}
+                    {a.sima_code && <span>S:{a.sima_code}</span>}
+                    {a.attended && a.attended_at && <span style={{color:C.green}}>✓ {new Date(a.attended_at).toLocaleTimeString("es",{hour:"2-digit",minute:"2-digit"})}</span>}
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:6,flexShrink:0}}>
+                  {!a.attended
+                    ? <button className="btn-sm btn-green" onClick={()=>markAttended(a)} disabled={saving} style={{fontSize:11,padding:"6px 12px"}}>✓ Registrar</button>
+                    : <button className="btn-sm btn-danger" onClick={()=>unmarkAttended(a)} style={{fontSize:11,padding:"6px 12px"}}>✕ Quitar</button>
+                  }
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="table-footer">
+            <span>{listToShow.length} registro(s) mostrados</span>
+            <span style={{color:C.green}}>{attended} confirmados · {pending} pendientes</span>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL AGREGAR */}
+      {showAdd && (
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowAdd(false)}>
+          <div className="modal" style={{maxWidth:520}}>
+            <div className="modal-title">➕ Agregar Invitado</div>
+            <div className="field">
+              <label>Nombre completo *</label>
+              <input type="text" placeholder="Ej: César Pérez" value={newAttendee.name} onChange={e=>setNewAttendee(n=>({...n,name:e.target.value}))}/>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div className="field"><label>DPI / Cédula</label><input type="text" placeholder="Número de identificación" value={newAttendee.dpi} onChange={e=>setNewAttendee(n=>({...n,dpi:e.target.value}))}/></div>
+              <div className="field"><label>Código FACTUS</label><input type="text" placeholder="Código FACTUS" value={newAttendee.factus_code} onChange={e=>setNewAttendee(n=>({...n,factus_code:e.target.value}))}/></div>
+              <div className="field"><label>Código SIMA</label><input type="text" placeholder="Código SIMA" value={newAttendee.sima_code} onChange={e=>setNewAttendee(n=>({...n,sima_code:e.target.value}))}/></div>
+              <div className="field"><label>Área</label><input type="text" placeholder="Ej: Ventas" value={newAttendee.area} onChange={e=>setNewAttendee(n=>({...n,area:e.target.value}))}/></div>
+              <div className="field"><label>Puesto</label><input type="text" placeholder="Ej: Supervisor" value={newAttendee.position} onChange={e=>setNewAttendee(n=>({...n,position:e.target.value}))}/></div>
+              <div className="field"><label>Tienda</label><input type="text" placeholder="Nombre de tienda" value={newAttendee.store_name} onChange={e=>setNewAttendee(n=>({...n,store_name:e.target.value}))}/></div>
+            </div>
+            <div className="modal-actions">
+              <button className="btn-sm btn-ghost" onClick={()=>setShowAdd(false)}>Cancelar</button>
+              <button className="btn-sm btn-blue" onClick={addAttendee} disabled={saving}>{saving?"Guardando…":"Agregar"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CSV */}
+      {showCsv && (
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowCsv(false)}>
+          <div className="modal" style={{maxWidth:480}}>
+            <div className="modal-title">📂 Importar Invitados CSV</div>
+            <div style={{fontSize:13,color:C.muted,marginBottom:16,lineHeight:1.8}}>
+              El CSV debe tener estas columnas en orden:<br/>
+              <strong style={{color:C.text}}>nombre, dpi, factus, sima, area, puesto, tienda</strong><br/>
+              La primera fila es encabezado y se ignora. Soporta hasta 500 filas.
+            </div>
+            <div style={{background:C.darker,borderRadius:8,padding:"10px 14px",marginBottom:16,fontSize:12,color:C.muted,fontFamily:"monospace"}}>
+              nombre,dpi,factus,sima,area,puesto,tienda<br/>
+              César Pérez,1234567890101,F001,S001,Ventas,Supervisor,Tienda Central
+            </div>
+            <label className="upload-zone" style={{display:"block"}}>
+              <input type="file" accept=".csv" onChange={handleCsvImport} style={{display:"none"}}/>
+              <div className="upload-icon">📄</div>
+              <div className="upload-text">{importing?"Importando…":"Clic para seleccionar CSV"}</div>
+              <div className="upload-hint">Formato CSV, separado por comas. Máx 500 filas.</div>
+            </label>
+            <div className="modal-actions">
+              <button className="btn-sm btn-ghost" onClick={()=>setShowCsv(false)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {attToast && <Toast key={attToast.key} msg={attToast.msg} type={attToast.type} onClose={()=>setAttToast(null)}/>}
+    </div>
+  );
+}
+
 function EmployeePortal({ user }) {
   const [section, setSection] = useState("inicio");
   const [events, setEvents] = useState([]);
@@ -2311,7 +2670,7 @@ export default function App() {
 
   const logout = async () => { await supabase.auth.signOut(); setUser(null); setPage("dashboard"); setUsers([]); };
 
-  const pageTitle = { dashboard:"Dashboard", users:"Usuarios", settings:"Configuración", announcements:"Anuncios", events:"Eventos", processes:"Procesos", gallery:"Galería" };
+  const pageTitle = { dashboard:"Dashboard", users:"Usuarios", settings:"Configuración", announcements:"Anuncios", events:"Eventos", processes:"Procesos", gallery:"Galería", attendance:"Asistencia" };
 
   const renderPage = () => {
     switch(page) {
@@ -2321,6 +2680,7 @@ export default function App() {
       case "announcements": return <AnnouncementsModule currentUser={user}/>;
       case "events":        return <EventsModule currentUser={user}/>;
       case "processes":     return <PlaceholderModule icon="📋" name="Procesos y Documentos" desc="Centraliza manuales y procedimientos oficiales de GTA."/>;
+      case "attendance":    return <AttendanceModule currentUser={user}/>;
       case "gallery":       return <GalleryModule currentUser={user}/>;
       default: return null;
     }
