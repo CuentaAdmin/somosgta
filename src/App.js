@@ -1740,6 +1740,8 @@ function EmployeeAttendanceSection({ showToast }) {
   const [search, setSearch] = useState("");
   const [results, setResults] = useState([]);
   const [filterTab, setFilterTab] = useState("all");
+  const [showWalkIn, setShowWalkIn] = useState(false);
+  const [walkInForm, setWalkInForm] = useState({ name:"", dpi:"", store_name:"", position:"" });
 
   useEffect(() => {
     supabase.from("attendees").select("*").order("name").then(({ data }) => {
@@ -1777,6 +1779,28 @@ function EmployeeAttendanceSection({ showToast }) {
     setAttendees(prev => prev.map(x => x.id===a.id ? {...x,attended:true,attended_at:now} : x));
     setResults(prev => prev.map(x => x.id===a.id ? {...x,attended:true,attended_at:now} : x));
     showToast(`✓ ${a.name} registrado`,"success");
+    setSaving(false);
+  };
+
+  const saveWalkIn = async () => {
+    if (!walkInForm.name.trim()) { showToast("El nombre es obligatorio","error"); return; }
+    setSaving(true);
+    const now = new Date().toISOString();
+    const { data, error } = await supabase.from("attendees").insert({
+      name: walkInForm.name.trim(),
+      dpi: walkInForm.dpi.trim() || null,
+      store_name: walkInForm.store_name.trim() || null,
+      position: walkInForm.position.trim() || null,
+      walk_in: true,
+      attended: true,
+      attended_at: now,
+    }).select().single();
+    if (error) { showToast("Error: "+error.message,"error"); setSaving(false); return; }
+    setAttendees(prev => [...prev, data].sort((a,b)=>a.name.localeCompare(b.name)));
+    showToast(`✓ ${data.name} registrado como walk-in`,"success");
+    setShowWalkIn(false);
+    setWalkInForm({ name:"", dpi:"", store_name:"", position:"" });
+    setSearch(""); setResults([]);
     setSaving(false);
   };
 
@@ -1854,9 +1878,60 @@ function EmployeeAttendanceSection({ showToast }) {
           </div>
         )}
         {search && results.length===0 && (
-          <div style={{padding:14,background:"#f8f9fb",borderRadius:10,fontSize:13,color:"#aaa",textAlign:"center"}}>No se encontró "{search}"</div>
+          <div style={{padding:"14px 16px",background:"#fff8f0",borderRadius:10,border:"1px solid #f7921d33",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:600,color:"#1a1a2e",marginBottom:2}}>No se encontró "{search}"</div>
+              <div style={{fontSize:11,color:"#aaa"}}>La persona no está en la lista de invitados</div>
+            </div>
+            <button
+              onClick={()=>{setShowWalkIn(true);setWalkInForm(f=>({...f,name:search}));}}
+              style={{background:C.orange,color:"#fff",border:"none",borderRadius:8,padding:"9px 16px",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>
+              + Registrar walk-in
+            </button>
+          </div>
         )}
       </div>
+
+      {/* MODAL WALK-IN */}
+      {showWalkIn && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(4px)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={e=>e.target===e.currentTarget&&setShowWalkIn(false)}>
+          <div style={{background:"#fff",borderRadius:16,padding:28,width:"100%",maxWidth:440,boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+              <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:18,fontWeight:700,color:"#1a1a2e",flex:1}}>Registrar Walk-in</div>
+              <span style={{background:`${C.orange}20`,color:C.orange,fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20}}>No estaba en la lista</span>
+            </div>
+            <div style={{fontSize:12,color:"#aaa",marginBottom:20}}>Esta persona tomará el lugar de un invitado. Se registrará su asistencia inmediatamente.</div>
+            <div style={{marginBottom:14}}>
+              <label style={{display:"block",fontSize:11,fontWeight:600,color:"#888",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.6px"}}>Nombre completo *</label>
+              <input type="text" placeholder="Ej: Mariano Rivera" value={walkInForm.name} onChange={e=>setWalkInForm(f=>({...f,name:e.target.value}))}
+                style={{width:"100%",border:"1.5px solid #e8edf2",borderRadius:10,padding:"11px 14px",fontSize:14,color:"#1a1a2e",outline:"none",fontFamily:"'Inter',sans-serif"}}/>
+            </div>
+            <div style={{marginBottom:14}}>
+              <label style={{display:"block",fontSize:11,fontWeight:600,color:"#888",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.6px"}}>DPI / Número de identificación</label>
+              <input type="text" placeholder="Número de DPI" value={walkInForm.dpi} onChange={e=>setWalkInForm(f=>({...f,dpi:e.target.value}))}
+                style={{width:"100%",border:"1.5px solid #e8edf2",borderRadius:10,padding:"11px 14px",fontSize:14,color:"#1a1a2e",outline:"none",fontFamily:"'Inter',sans-serif"}}/>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
+              <div>
+                <label style={{display:"block",fontSize:11,fontWeight:600,color:"#888",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.6px"}}>Tienda</label>
+                <input type="text" placeholder="Nombre de tienda" value={walkInForm.store_name} onChange={e=>setWalkInForm(f=>({...f,store_name:e.target.value}))}
+                  style={{width:"100%",border:"1.5px solid #e8edf2",borderRadius:10,padding:"11px 14px",fontSize:14,color:"#1a1a2e",outline:"none",fontFamily:"'Inter',sans-serif"}}/>
+              </div>
+              <div>
+                <label style={{display:"block",fontSize:11,fontWeight:600,color:"#888",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.6px"}}>Puesto</label>
+                <input type="text" placeholder="Ej: Supervisor" value={walkInForm.position} onChange={e=>setWalkInForm(f=>({...f,position:e.target.value}))}
+                  style={{width:"100%",border:"1.5px solid #e8edf2",borderRadius:10,padding:"11px 14px",fontSize:14,color:"#1a1a2e",outline:"none",fontFamily:"'Inter',sans-serif"}}/>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+              <button onClick={()=>setShowWalkIn(false)} style={{padding:"10px 20px",borderRadius:10,border:"1px solid #e8edf2",background:"#f5f7fa",color:"#555",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Exo 2',sans-serif"}}>Cancelar</button>
+              <button onClick={saveWalkIn} disabled={saving} style={{padding:"10px 20px",borderRadius:10,border:"none",background:C.orange,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Exo 2',sans-serif"}}>
+                {saving?"Registrando…":"✓ Registrar y marcar asistencia"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* LISTA */}
       <div style={{background:"#fff",borderRadius:14,overflow:"hidden",boxShadow:"0 2px 10px rgba(0,0,0,0.06)"}}>
@@ -1874,7 +1949,10 @@ function EmployeeAttendanceSection({ showToast }) {
             <div key={a.id} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 18px",borderBottom:"1px solid #f5f5f5",background:a.attended?`${C.green}05`:"#fff"}}>
               <div style={{width:8,height:8,borderRadius:"50%",background:a.attended?C.green:"#e0e0e0",flexShrink:0}}/>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontWeight:500,fontSize:13,color:"#1a1a2e"}}>{a.name}</div>
+                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:2}}>
+                  <span style={{fontWeight:500,fontSize:13,color:"#1a1a2e"}}>{a.name}</span>
+                  {a.walk_in && <span style={{background:`${C.orange}20`,color:C.orange,fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20}}>Walk-in</span>}
+                </div>
                 <div style={{fontSize:11,color:"#aaa",display:"flex",gap:8,flexWrap:"wrap"}}>
                   {a.store_name&&<span>🏪 {a.store_name}</span>}
                   {a.area&&<span>{a.area}</span>}
@@ -2171,7 +2249,10 @@ function AttendanceModule({ currentUser }) {
               <div key={a.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 20px",borderBottom:`1px solid ${C.border}44`,background:a.attended?`${C.green}06`:"transparent"}}>
                 <div style={{width:8,height:8,borderRadius:"50%",background:a.attended?C.green:C.muted,flexShrink:0,boxShadow:a.attended?`0 0 6px ${C.green}88`:"none"}}/>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontWeight:500,fontSize:14,marginBottom:2}}>{a.name}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:2}}>
+                  <span style={{fontWeight:500,fontSize:14}}>{a.name}</span>
+                  {a.walk_in && <span style={{background:`${C.orange}20`,color:C.orange,fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20}}>Walk-in</span>}
+                </div>
                   <div style={{display:"flex",gap:10,fontSize:11,color:C.muted,flexWrap:"wrap"}}>
                     {a.store_name && <span>🏪 {a.store_name}</span>}
                     {a.area && <span>🏢 {a.area}</span>}
