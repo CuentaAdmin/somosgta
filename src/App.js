@@ -2383,6 +2383,7 @@ function AttendanceModule({ currentUser }) {
 
 function EmployeePortal({ user }) {
   const [section, setSection] = useState("inicio");
+  const [portalSidebarOpen, setPortalSidebarOpen] = useState(false);
   const [events, setEvents] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
   const [gallery, setGallery] = useState([]);
@@ -2587,7 +2588,8 @@ function EmployeePortal({ user }) {
   return (
     <><style>{css}</style><style>{portalCss}</style>
     <div className="portal">
-      <aside className="portal-sidebar">
+      <div style={{display:portalSidebarOpen?"block":"none",position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:199}} onClick={()=>setPortalSidebarOpen(false)}/>
+      <aside className={`portal-sidebar ${portalSidebarOpen?"open":""}`}>
         <div className="portal-sidebar-brand">
           <Logo size={32}/>
           <div className="portal-sidebar-title">Somos<span>GTA</span></div>
@@ -2621,7 +2623,10 @@ function EmployeePortal({ user }) {
 
       <div className="portal-main">
         <div className="portal-topbar">
-          <div className="portal-section-heading">{sectionTitles[section]}</div>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <button style={{display:"none",background:"none",border:"none",fontSize:22,cursor:"pointer",padding:"4px 8px"}} className="portal-hamburger" onClick={()=>setPortalSidebarOpen(o=>!o)}>☰</button>
+            <div className="portal-section-heading">{sectionTitles[section]}</div>
+          </div>
           <div style={{fontSize:13,color:"#888"}}>Bienvenido, <strong style={{color:"#1a1a2e"}}>{user.name.split(" ")[0]}</strong></div>
         </div>
 
