@@ -38,7 +38,10 @@ const css = `
   .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
   .error-msg { background: #ff4d4d18; border: 1px solid #ff4d4d44; border-radius: 8px; padding: 10px 14px; color: #ff7070; font-size: 13px; margin-bottom: 16px; text-align: center; }
   .app { display: flex; min-height: 100vh; }
-  .sidebar { width: 240px; min-width: 240px; background: ${C.card}; border-right: 1px solid ${C.border}; display: flex; flex-direction: column; position: fixed; top: 0; left: 0; bottom: 0; z-index: 100; }
+  .sidebar { width: 240px; min-width: 240px; background: ${C.card}; border-right: 1px solid ${C.border}; display: flex; flex-direction: column; position: fixed; top: 0; left: 0; bottom: 0; z-index: 200; transition: transform 0.3s ease; }
+  .sidebar.closed { transform: translateX(-240px); }
+  .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 199; }
+  .sidebar-overlay.visible { display: block; }
   .sidebar-brand { padding: 24px 20px; border-bottom: 1px solid ${C.border}; display: flex; align-items: center; gap: 10px; }
   .sidebar-logo { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; }
   .sidebar-logo img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
@@ -59,10 +62,19 @@ const css = `
   .user-role { font-size: 11px; color: ${C.muted}; }
   .logout-btn { background: none; border: none; color: ${C.muted}; cursor: pointer; font-size: 16px; padding: 4px; border-radius: 4px; transition: color 0.15s; }
   .logout-btn:hover { color: #ff6b6b; }
+  .hamburger { display: none; background: none; border: none; color: ${C.text}; font-size: 22px; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
   .main { margin-left: 240px; flex: 1; display: flex; flex-direction: column; min-height: 100vh; }
   .topbar { background: ${C.card}; border-bottom: 1px solid ${C.border}; padding: 16px 32px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; }
   .topbar-title { font-family: 'Exo 2', sans-serif; font-size: 20px; font-weight: 700; }
   .topbar-actions { display: flex; gap: 10px; align-items: center; }
+  @media (max-width: 768px) {
+    .sidebar { transform: translateX(-240px); }
+    .sidebar.open { transform: translateX(0); }
+    .hamburger { display: block; }
+    .main { margin-left: 0; }
+    .topbar { padding: 12px 16px; }
+    .content { padding: 16px; }
+  }
   .btn-sm { padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; font-family: 'Exo 2', sans-serif; transition: all 0.15s; display: flex; align-items: center; gap: 6px; }
   .btn-blue { background: ${C.blue}; color: #fff; }
   .btn-blue:hover { background: #0099d4; }
@@ -200,7 +212,7 @@ function LoginPage({ onLogin, logoUrl }) {
   );
 }
 
-function Sidebar({ user, active, setActive, onLogout, logoUrl }) {
+function Sidebar({ user, active, setActive, onLogout, logoUrl, sidebarOpen }) {
   const isSA = user.role === "superadmin";
   const isAdmin = user.role === "admin" || isSA;
   const navItems = [
@@ -216,7 +228,7 @@ function Sidebar({ user, active, setActive, onLogout, logoUrl }) {
     ...(isSA ? [{ id:"settings", icon:"⚙️", label:"Configuración" }] : []),
   ];
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${sidebarOpen?"open":""}`}>
       <div className="sidebar-brand">
         <Logo size={36} />
         <div className="sidebar-title">Somos<span>GTA</span></div>
@@ -3022,6 +3034,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [users, setUsers] = useState([]);
   const [page, setPage] = useState("dashboard");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [logoUrl, setLogoUrl] = useState(LOGO_URL);
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -3088,10 +3101,14 @@ export default function App() {
   return (
     <><style>{css}</style>
     <div className="app">
-      <Sidebar user={user} active={page} setActive={setPage} onLogout={logout} logoUrl={logoUrl}/>
+      <div className={`sidebar-overlay ${sidebarOpen?"visible":""}`} onClick={()=>setSidebarOpen(false)}/>
+      <Sidebar user={user} active={page} setActive={(p)=>{setPage(p);setSidebarOpen(false);}} onLogout={logout} logoUrl={logoUrl} sidebarOpen={sidebarOpen}/>
       <div className="main">
         <div className="topbar">
-          <div className="topbar-title">{pageTitle[page]}</div>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <button className="hamburger" onClick={()=>setSidebarOpen(o=>!o)}>☰</button>
+            <div className="topbar-title">{pageTitle[page]}</div>
+          </div>
           <div className="topbar-actions">
             <span style={{fontSize:13,color:C.muted}}>Bienvenido, <strong style={{color:C.text}}>{user.name.split(" ")[0]}</strong></span>
           </div>
