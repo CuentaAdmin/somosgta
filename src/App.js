@@ -1705,14 +1705,14 @@ function GuestPortal() {
             <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:800,color:"#1a1a2e",marginBottom:4}}>Compartir archivo</div>
             <div style={{fontSize:13,color:"#aaa",marginBottom:24,fontFamily:"'DM Sans',sans-serif"}}>Tu contenido será visible para todos los visitantes.</div>
             <div className="g-field">
-              <label>Nombra tu foto/video*</label>
-              <input type="text" placeholder="Describe brevemente tu archivo" value={uploadForm.title} onChange={e=>setUploadForm(f=>({...f,title:e.target.value}))}/>
+              <label>Nombre del álbum *</label>
+              <input type="text" placeholder="Ej: Fiesta diciembre 2025" value={uploadForm.albumName||""} onChange={e=>setUploadForm(f=>({...f,albumName:e.target.value}))}/>
             </div>
             <div className="g-field">
               <label>Tipo de archivo</label>
               <select value={uploadForm.type} onChange={e=>setUploadForm(f=>({...f,type:e.target.value,file:null}))}>
-                <option value="foto">📷 Foto (JPG, PNG — máx 10MB)</option>
-                <option value="video">🎥 Video (MP4, MOV — máx 50MB)</option>
+                <option value="foto">📷 Foto (JPG, PNG — máx 25MB)</option>
+                <option value="video">🎥 Video (MP4, MOV — máx 500MB)</option>
               </select>
             </div>
             <div className="g-field">
@@ -1721,7 +1721,7 @@ function GuestPortal() {
                 <input type="file" accept={uploadForm.type==="foto"?"image/*":"video/*"} style={{display:"none"}} onChange={e=>setUploadForm(f=>({...f,file:e.target.files[0]}))}/>
                 <div className="g-drop-icon">{uploadForm.file ? "✅" : uploadForm.type==="foto" ? "🖼️" : "🎬"}</div>
                 <div className="g-drop-text">{uploadForm.file ? uploadForm.file.name : "Clic para seleccionar archivo"}</div>
-                <div className="g-drop-hint">{uploadForm.type==="foto" ? "JPG, PNG, WEBP · máx 10MB" : "MP4, MOV, WEBM · máx 50MB"}</div>
+                <div className="g-drop-hint">{uploadForm.type==="foto" ? "JPG, PNG, WEBP · máx 25MB" : "MP4, MOV, WEBM · máx 500MB"}</div>
               </label>
             </div>
             <div className="g-actions">
