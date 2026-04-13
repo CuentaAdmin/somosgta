@@ -2388,7 +2388,9 @@ function EmployeePortal({ user }) {
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [showUpload, setShowUpload] = useState(false);
-  const [uploadForm, setUploadForm] = useState({ title:"", type:"foto", file:null });
+  const [uploadForm, setUploadForm] = useState({ type:"foto", file:null });
+  const [folderSearch, setFolderSearch] = useState("");
+  const [folderSuggestions, setFolderSuggestions] = useState([]);
   const [viewItem, setViewItem] = useState(null);
   const [selectedAnn, setSelectedAnn] = useState(null);
   const [calYear, setCalYear] = useState(new Date().getFullYear());
@@ -2461,7 +2463,8 @@ function EmployeePortal({ user }) {
   };
 
   const handleUpload = async () => {
-    if (!uploadForm.title || !uploadForm.file) { showUpToast("Completa todos los campos","error"); return; }
+    if (!uploadForm.folderName?.trim()) { showUpToast("El nombre de la carpeta es obligatorio","error"); return; }
+    if (!uploadForm.file) { showUpToast("Selecciona un archivo","error"); return; }
     const maxSize = uploadForm.type === "foto" ? 25*1024*1024 : 500*1024*1024;
     const maxLabel = uploadForm.type === "foto" ? "25MB" : "500MB";
     if (uploadForm.file.size > maxSize) { showUpToast(`El archivo supera el límite de ${maxLabel}`,"error"); return; }
@@ -2469,23 +2472,25 @@ function EmployeePortal({ user }) {
     try {
       const fd = new FormData();
       fd.append("file", uploadForm.file);
-      fd.append("albumName", activeFolder || uploadForm.title);
+      fd.append("albumName", uploadForm.folderName.trim());
       const res = await fetch("https://eoefjevfwrqkfnmcftmp.supabase.co/functions/v1/upload-to-drive", {
         method: "POST",
         body: fd,
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || "Error al subir");
+      const folderName = uploadForm.folderName.trim();
       const { data, error } = await supabase.from("gallery").insert({
-        title: uploadForm.title, type: uploadForm.type, url: result.url,
-        folder: activeFolder || null, uploaded_by: user.id, uploaded_by_name: user.name
+        title: folderName, type: uploadForm.type, url: result.url,
+        folder: folderName, uploaded_by: user.id, uploaded_by_name: user.name
       }).select().single();
       if (error) throw new Error(error.message);
       setGallery(g => [data, ...g]);
-      if (activeFolder && !folders.includes(activeFolder)) setFolders(f=>[...f,activeFolder]);
+      if (!folderSuggestions.includes(folderName)) setFolderSuggestions(f=>[...f,folderName]);
       showUpToast("Archivo subido","success");
       setShowUpload(false);
-      setUploadForm({ title:"", type:"foto", file:null });
+      setUploadForm({ type:"foto", file:null });
+      setFolderSearch("");
     } catch(e) {
       showUpToast("Error: " + e.message,"error");
     }
@@ -2807,7 +2812,7 @@ function EmployeePortal({ user }) {
               </div>
 
               <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginBottom:20}}>
-                {!isInSub && <button className="btn-portal btn-portal-ghost" onClick={()=>setShowNewFolder(true)}>
+                {false && !isInSub && <button className="btn-portal btn-portal-ghost" onClick={()=>setShowNewFolder(true)}>
                   📁 {!activeFolder?"Nueva Carpeta":"Nueva Subcarpeta"}
                 </button>}
                 <button className="btn-portal btn-portal-blue" onClick={()=>setShowUpload(true)}>+ Subir Archivo</button>
@@ -2963,12 +2968,22 @@ function EmployeePortal({ user }) {
         <div className="modal-overlay-light" onClick={e=>e.target===e.currentTarget&&setShowUpload(false)}>
           <div className="modal-light" style={{maxWidth:480}}>
             <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:18,fontWeight:700,color:"#1a1a2e",marginBottom:16}}>📤 Subir Archivo</div>
-            <div style={{marginBottom:12,padding:"8px 12px",background:`${C.blue}10`,borderRadius:8,fontSize:12,color:C.blue}}>
-              Subiendo a: <strong>{activeFolder ? activeFolder.replace("/"," → ") : "General"}</strong>
-            </div>
             <div className="field-light" style={{marginBottom:12}}>
-              <label>Título *</label>
-              <input type="text" placeholder="Describe este archivo" value={uploadForm.title} onChange={e=>setUploadForm(f=>({...f,title:e.target.value}))}/>
+              <label>Nombre de la carpeta *</label>
+              <input type="text" placeholder="Busca o crea una carpeta..." value={folderSearch} onChange={e=>{setFolderSearch(e.target.value);setUploadForm(f=>({...f,folderName:e.target.value}));}}/>
+              {folderSearch.trim().length > 0 && (
+                <div style={{background:"#fff",border:"1px solid #eee",borderRadius:8,marginTop:4,maxHeight:160,overflowY:"auto",boxShadow:"0 4px 12px rgba(0,0,0,0.08)"}}>
+                  {folderSuggestions.filter(a=>a.toLowerCase().includes(folderSearch.toLowerCase())).length === 0 ? (
+                    <div style={{padding:"10px 14px",fontSize:13,color:"#aaa"}}>No existe — se creará "{folderSearch.trim()}"</div>
+                  ) : (
+                    folderSuggestions.filter(a=>a.toLowerCase().includes(folderSearch.toLowerCase())).map(a=>(
+                      <div key={a} onClick={()=>{setUploadForm(f=>({...f,folderName:a}));setFolderSearch(a);}} style={{padding:"10px 14px",fontSize:13,cursor:"pointer",borderBottom:"1px solid #f5f5f5",color:"#1a1a2e"}} onMouseEnter={e=>e.target.style.background="#f9f9f9"} onMouseLeave={e=>e.target.style.background="#fff"}>
+                        📁 {a}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
             <div className="field-light" style={{marginBottom:12}}>
               <label>Tipo</label>
@@ -2978,7 +2993,7 @@ function EmployeePortal({ user }) {
               </select>
             </div>
             <div className="field-light" style={{marginBottom:12}}>
-              <label>{uploadForm.type==="foto"?"Imagen (JPG, PNG — máx 10MB)":"Video (MP4, MOV — máx 50MB)"}</label>
+              <label>{uploadForm.type==="foto"?"Imagen (JPG, PNG — máx 25MB)":"Video (MP4, MOV — máx 500MB)"}</label>
               <label className="upload-zone-light" style={{display:"block"}}>
                 <input type="file" accept={uploadForm.type==="foto"?"image/*":"video/*"} style={{display:"none"}} onChange={e=>setUploadForm(f=>({...f,file:e.target.files[0]}))}/>
                 <div style={{fontSize:28,marginBottom:8}}>{uploadForm.file?"✅":uploadForm.type==="foto"?"📷":"🎥"}</div>
