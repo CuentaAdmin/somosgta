@@ -229,7 +229,7 @@ function Sidebar({ user, active, setActive, onLogout, logoUrl, sidebarOpen }) {
     ...(isSA ? [{ id:"settings", icon:"⚙️", label:"Configuración" }] : []),
   ];
   return (
-    <aside className={`sidebar ${sidebarOpen?"open":""}`}>
+    <aside className="sidebar" style={{transform: sidebarOpen ? "translateX(0)" : ""}}>
       <div className="sidebar-brand">
         <Logo size={36} />
         <div className="sidebar-title">Somos<span>GTA</span></div>
