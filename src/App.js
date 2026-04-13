@@ -1696,7 +1696,6 @@ function GuestPortal() {
           <div className="g-modal">
             <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:700,color:"#1a1a2e",marginBottom:16}}>{viewItem.title}</div>
             {viewItem.type === "foto"
-              {viewItem.type === "foto"
               ? <img src={viewItem.url} alt={viewItem.title} style={{width:"100%",borderRadius:12,maxHeight:420,objectFit:"contain",background:"#f5f5f5"}} onError={e=>{e.target.style.display="none";e.target.insertAdjacentHTML("afterend",'<div style="width:100%;padding:40px 0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#f5f5f5;border-radius:12px;color:#aaa;font-size:13px;gap:10px"><span style="font-size:40px">🚫</span><span>Contenido no disponible</span><span style="font-size:11px;color:#ccc">Contacta al administrador de SomosGTA</span></div>')}}/>
               : <iframe src={viewItem.url} style={{width:"100%",borderRadius:12,height:360,border:"none"}} allowFullScreen title={viewItem.title}/>
             }
