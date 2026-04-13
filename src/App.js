@@ -1184,7 +1184,7 @@ function GalleryModule({ currentUser }) {
               getYoutubeEmbed(selected.url) ? (
                 <iframe src={getYoutubeEmbed(selected.url)} style={{width:"100%",height:320,borderRadius:10,border:"none"}} allowFullScreen title={selected.title}/>
               ) : (
-                <video src={selected.url} controls style={{width:"100%",borderRadius:10,maxHeight:400}}/>
+                <iframe src={selected.url} style={{width:"100%",height:360,borderRadius:10,border:"none"}} allowFullScreen title={selected.title}/>
               )
             )}
             <div style={{marginTop:12,fontSize:12,color:C.muted}}>
