@@ -2588,8 +2588,8 @@ function EmployeePortal({ user }) {
   return (
     <><style>{css}</style><style>{portalCss}</style>
     <div className="portal">
-      <div style={{display:portalSidebarOpen?"block":"none",position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:199}} onClick={()=>setPortalSidebarOpen(false)}/>
-      <aside className={`portal-sidebar ${portalSidebarOpen?"open":""}`}>
+      <div style={{display:portalSidebarOpen?"block":"none",position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:198}} onClick={()=>setPortalSidebarOpen(false)}/>
+      <aside className={`portal-sidebar ${portalSidebarOpen?"open":""}`} style={{zIndex:199}}>
         <div className="portal-sidebar-brand">
           <Logo size={32}/>
           <div className="portal-sidebar-title">Somos<span>GTA</span></div>
