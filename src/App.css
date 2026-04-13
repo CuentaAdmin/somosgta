@@ -1,9 +1,12 @@
 @media (max-width: 768px) {
   .sidebar {
-    transform: translateX(-240px);
+    transform: translateX(-240px) !important;
+  }
+  .sidebar.open {
+    transform: translateX(0) !important;
   }
   .hamburger {
-    display: block !important;
+    display: flex !important;
   }
   .main {
     margin-left: 0 !important;
@@ -15,10 +18,13 @@
     padding: 16px !important;
   }
   .portal-sidebar {
-    transform: translateX(-220px);
+    transform: translateX(-220px) !important;
+  }
+  .portal-sidebar.open {
+    transform: translateX(0) !important;
   }
   .portal-hamburger {
-    display: block !important;
+    display: flex !important;
   }
   .portal-main {
     margin-left: 0 !important;
