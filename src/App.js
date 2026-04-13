@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import "./App.css";
 import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://eoefjevfwrqkfnmcftmp.supabase.co";
