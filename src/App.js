@@ -38,7 +38,7 @@ const css = `
   .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
   .error-msg { background: #ff4d4d18; border: 1px solid #ff4d4d44; border-radius: 8px; padding: 10px 14px; color: #ff7070; font-size: 13px; margin-bottom: 16px; text-align: center; }
   .app { display: flex; min-height: 100vh; }
-  .sidebar { width: 240px; min-width: 240px; background: ${C.card}; border-right: 1px solid ${C.border}; display: flex; flex-direction: column; position: fixed; top: 0; left: 0; bottom: 0; z-index: 200; transition: transform 0.3s ease; }
+  .sidebar { width: 240px; min-width: 240px; background: ${C.card}; border-right: 1px solid ${C.border}; display: flex; flex-direction: column; position: fixed; top: 0; left: 0; bottom: 0; z-index: 200; transform: translateX(0); transition: transform 0.3s ease; }
   .sidebar.closed { transform: translateX(-240px); }
   .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 199; }
   .sidebar-overlay.visible { display: block; }
