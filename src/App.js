@@ -2946,9 +2946,9 @@ function EmployeePortal({ user }) {
         <div className="modal-overlay-light" onClick={e=>e.target===e.currentTarget&&setViewItem(null)}>
           <div className="modal-light" style={{maxWidth:640}}>
             <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:18,fontWeight:700,color:"#1a1a2e",marginBottom:14}}>{viewItem.title}</div>
-            {viewItem.type==="foto"
-              ? <img src={viewItem.url} alt={viewItem.title} style={{width:"100%",borderRadius:10,maxHeight:400,objectFit:"contain",background:"#f5f5f5"}}/>
-              : <video src={viewItem.url} controls style={{width:"100%",borderRadius:10,maxHeight:360}}/>
+            {viewItem.type === "foto"
+              ? <img src={viewItem.url} alt={viewItem.title} style={{width:"100%",borderRadius:10,maxHeight:400,objectFit:"contain",background:"#f5f5f5"}} onError={e=>{e.target.style.display="none";e.target.insertAdjacentHTML("afterend",'<div style="padding:40px 0;text-align:center;color:#aaa"><div style="font-size:36px">🚫</div><div>Contenido no disponible</div><div style="font-size:11px;margin-top:4px">Contacta al administrador de SomosGTA</div></div>');}}/>
+              : <iframe src={viewItem.url} style={{width:"100%",borderRadius:10,height:360,border:"none"}} allowFullScreen title={viewItem.title}/>
             }
             <div style={{marginTop:10,fontSize:12,color:"#aaa"}}>Subido por {viewItem.uploaded_by_name} · {new Date(viewItem.created_at).toLocaleDateString("es")}</div>
             <div style={{marginTop:14,textAlign:"right"}}><button className="btn-portal btn-portal-ghost" onClick={()=>setViewItem(null)}>Cerrar</button></div>
