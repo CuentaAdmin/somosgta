@@ -1445,7 +1445,18 @@ function GuestPortal() {
   const [showUpload, setShowUpload] = useState(false);
   const [viewItem, setViewItem] = useState(null);
   const [filter, setFilter] = useState("all");
-  const [uploadForm, setUploadForm] = useState({ title:"", type:"foto", file:null });
+  const [uploadForm, setUploadForm] = useState({ title:"", albumName:"", type:"foto", file:null });
+  const [albums, setAlbums] = useState([]);
+  const [albumSearch, setAlbumSearch] = useState("");
+
+  useEffect(() => {
+    supabase.from("guest_uploads").select("title").then(({ data }) => {
+      if (data) {
+        const unique = [...new Set(data.map(d => d.title).filter(Boolean))];
+        setAlbums(unique);
+      }
+    });
+  }, []);
   const [guestToast, setGuestToast] = useState(null);
 
   const showGuestToast = (msg, type="info") => setGuestToast({ msg, type, key: Date.now() });
@@ -1658,7 +1669,7 @@ function GuestPortal() {
             {filtered.map(item => (
               <div key={item.id} className="g-card" onClick={()=>setViewItem(item)}>
                 {item.type === "foto"
-                  ? <img className="g-card-thumb" src={item.url} alt={item.title} onError={e=>e.target.style.display="none"}/>
+                  ? <img className="g-card-thumb" src={item.url} alt={item.title} onError={e=>{e.target.style.display="none";e.target.parentNode.innerHTML='<div style="width:100%;height:180px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#f5f5f5;color:#aaa;font-size:12px;gap:8px"><span style="font-size:28px">🚫</span><span>Contenido no disponible</span><span style="font-size:10px;color:#ccc">Contacta al administrador de SomosGTA</span></div>'}}/>
                   : <div className="g-card-video"><div className="g-card-play">▶</div></div>
                 }
                 <div className="g-card-body">
@@ -1685,8 +1696,9 @@ function GuestPortal() {
           <div className="g-modal">
             <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:700,color:"#1a1a2e",marginBottom:16}}>{viewItem.title}</div>
             {viewItem.type === "foto"
-              ? <img src={viewItem.url} alt={viewItem.title} style={{width:"100%",borderRadius:12,maxHeight:420,objectFit:"contain",background:"#f5f5f5"}}/>
-              : <video src={viewItem.url} controls style={{width:"100%",borderRadius:12,maxHeight:360}}/>
+              {viewItem.type === "foto"
+              ? <img src={viewItem.url} alt={viewItem.title} style={{width:"100%",borderRadius:12,maxHeight:420,objectFit:"contain",background:"#f5f5f5"}} onError={e=>{e.target.style.display="none";e.target.insertAdjacentHTML("afterend",'<div style="width:100%;padding:40px 0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#f5f5f5;border-radius:12px;color:#aaa;font-size:13px;gap:10px"><span style="font-size:40px">🚫</span><span>Contenido no disponible</span><span style="font-size:11px;color:#ccc">Contacta al administrador de SomosGTA</span></div>')}}/>
+              : <iframe src={viewItem.url} style={{width:"100%",borderRadius:12,height:360,border:"none"}} allowFullScreen title={viewItem.title}/>
             }
             <div style={{marginTop:12,fontSize:12,color:"#aaa",fontFamily:"'DM Sans',sans-serif"}}>
               {new Date(viewItem.created_at).toLocaleDateString("es", {day:"numeric",month:"long",year:"numeric"})}
@@ -1706,7 +1718,20 @@ function GuestPortal() {
             <div style={{fontSize:13,color:"#aaa",marginBottom:24,fontFamily:"'DM Sans',sans-serif"}}>Tu contenido será visible para todos los visitantes.</div>
             <div className="g-field">
               <label>Nombre del álbum *</label>
-              <input type="text" placeholder="Ej: Fiesta diciembre 2025" value={uploadForm.albumName||""} onChange={e=>setUploadForm(f=>({...f,albumName:e.target.value}))}/>
+              <input type="text" placeholder="Busca o crea un álbum..." value={uploadForm.albumName||""} onChange={e=>{setUploadForm(f=>({...f,albumName:e.target.value}));setAlbumSearch(e.target.value);}}/>
+              {albumSearch.trim().length > 0 && (
+                <div style={{background:"#fff",border:"1px solid #eee",borderRadius:8,marginTop:4,maxHeight:160,overflowY:"auto",boxShadow:"0 4px 12px rgba(0,0,0,0.08)"}}>
+                  {albums.filter(a=>a.toLowerCase().includes(albumSearch.toLowerCase())).length === 0 ? (
+                    <div style={{padding:"10px 14px",fontSize:13,color:"#aaa"}}>No existe — se creará "{albumSearch.trim()}"</div>
+                  ) : (
+                    albums.filter(a=>a.toLowerCase().includes(albumSearch.toLowerCase())).map(a=>(
+                      <div key={a} onClick={()=>{setUploadForm(f=>({...f,albumName:a}));setAlbumSearch("");}} style={{padding:"10px 14px",fontSize:13,cursor:"pointer",borderBottom:"1px solid #f5f5f5",color:"#1a1a2e"}} onMouseEnter={e=>e.target.style.background="#f9f9f9"} onMouseLeave={e=>e.target.style.background="#fff"}>
+                        📁 {a}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
             <div className="g-field">
               <label>Tipo de archivo</label>
