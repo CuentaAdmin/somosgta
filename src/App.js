@@ -68,14 +68,7 @@ const css = `
   .topbar { background: ${C.card}; border-bottom: 1px solid ${C.border}; padding: 16px 32px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; }
   .topbar-title { font-family: 'Exo 2', sans-serif; font-size: 20px; font-weight: 700; }
   .topbar-actions { display: flex; gap: 10px; align-items: center; }
-  @media (max-width: 768px) {
-    .sidebar { transform: translateX(-240px); }
-    .sidebar.open { transform: translateX(0); }
-    .hamburger { display: block; }
-    .main { margin-left: 0; }
-    .topbar { padding: 12px 16px; }
-    .content { padding: 16px; }
-  }
+  
   .btn-sm { padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; font-family: 'Exo 2', sans-serif; transition: all 0.15s; display: flex; align-items: center; gap: 6px; }
   .btn-blue { background: ${C.blue}; color: #fff; }
   .btn-blue:hover { background: #0099d4; }
@@ -229,7 +222,7 @@ function Sidebar({ user, active, setActive, onLogout, logoUrl, sidebarOpen }) {
     ...(isSA ? [{ id:"settings", icon:"⚙️", label:"Configuración" }] : []),
   ];
   return (
-    <aside className="sidebar" style={{transform: sidebarOpen ? "translateX(0)" : ""}}>
+    <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
       <div className="sidebar-brand">
         <Logo size={36} />
         <div className="sidebar-title">Somos<span>GTA</span></div>
