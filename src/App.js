@@ -994,24 +994,32 @@ function GalleryModule({ currentUser }) {
   const handleUpload = async () => {
     if (!form.title) { showGalToast("El título es obligatorio","error"); return; }
     if (!form.file) { showGalToast("Selecciona un archivo","error"); return; }
-    const maxSize = form.type === "foto" ? 10 * 1024 * 1024 : 200 * 1024 * 1024;
-    const maxLabel = form.type === "foto" ? "10MB" : "200MB";
+    const maxSize = form.type === "foto" ? 25 * 1024 * 1024 : 500 * 1024 * 1024;
+    const maxLabel = form.type === "foto" ? "25MB" : "500MB";
     if (form.file.size > maxSize) { showGalToast(`El archivo supera el límite de ${maxLabel}`,"error"); return; }
     setUploading(true);
-    const ext = form.file.name.split(".").pop();
-    const filename = `${Date.now()}.${ext}`;
-    const { error: uploadError } = await supabase.storage.from("gallery").upload(filename, form.file);
-    if (uploadError) { showGalToast("Error al subir archivo: " + uploadError.message,"error"); setUploading(false); return; }
-    const { data: urlData } = supabase.storage.from("gallery").getPublicUrl(filename);
-    const { data, error } = await supabase.from("gallery").insert({
-      title: form.title, type: form.type, url: urlData.publicUrl,
-      uploaded_by: currentUser.id, uploaded_by_name: currentUser.name
-    }).select().single();
-    if (error) { showGalToast("Error al guardar: " + error.message,"error"); setUploading(false); return; }
-    setItems(i => [data, ...i]);
-    showGalToast("Archivo subido correctamente","success");
-    setShowForm(false);
-    setForm({ title:"", type:"foto", file:null });
+    try {
+      const fd = new FormData();
+      fd.append("file", form.file);
+      fd.append("albumName", form.title);
+      const res = await fetch("https://eoefjevfwrqkfnmcftmp.supabase.co/functions/v1/upload-to-drive", {
+        method: "POST",
+        body: fd,
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Error al subir");
+      const { data, error } = await supabase.from("gallery").insert({
+        title: form.title, type: form.type, url: result.url,
+        uploaded_by: currentUser.id, uploaded_by_name: currentUser.name
+      }).select().single();
+      if (error) throw new Error(error.message);
+      setItems(i => [data, ...i]);
+      showGalToast("Archivo subido correctamente","success");
+      setShowForm(false);
+      setForm({ title:"", type:"foto", file:null });
+    } catch(e) {
+      showGalToast("Error: " + e.message,"error");
+    }
     setUploading(false);
   };
 
@@ -1454,27 +1462,35 @@ function GuestPortal() {
   }, []);
 
   const handleUpload = async () => {
-    if (!uploadForm.title.trim()) { showGuestToast("El título es obligatorio","error"); return; }
+    if (!uploadForm.albumName?.trim()) { showGuestToast("El nombre del álbum es obligatorio","error"); return; }
     if (!uploadForm.file) { showGuestToast("Selecciona un archivo","error"); return; }
-    const maxSize = uploadForm.type === "foto" ? 10 * 1024 * 1024 : 50 * 1024 * 1024;
-    const maxLabel = uploadForm.type === "foto" ? "10MB" : "50MB";
+    const maxSize = uploadForm.type === "foto" ? 25 * 1024 * 1024 : 500 * 1024 * 1024;
+    const maxLabel = uploadForm.type === "foto" ? "25MB" : "500MB";
     if (uploadForm.file.size > maxSize) { showGuestToast(`El archivo supera el límite de ${maxLabel}`,"error"); return; }
     setUploading(true);
-    const ext = uploadForm.file.name.split(".").pop();
-    const filename = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-    const { error: upErr } = await supabase.storage.from("guest-gallery").upload(filename, uploadForm.file);
-    if (upErr) { showGuestToast("Error al subir: " + upErr.message,"error"); setUploading(false); return; }
-    const { data: urlData } = supabase.storage.from("guest-gallery").getPublicUrl(filename);
-    const { data, error } = await supabase.from("guest_uploads").insert({
-      title: uploadForm.title.trim(),
-      type: uploadForm.type,
-      url: urlData.publicUrl
-    }).select().single();
-    if (error) { showGuestToast("Error al guardar","error"); setUploading(false); return; }
-    setItems(i => [data, ...i]);
-    showGuestToast("¡Archivo compartido exitosamente!","success");
-    setShowUpload(false);
-    setUploadForm({ title:"", type:"foto", file:null });
+    try {
+      const fd = new FormData();
+      fd.append("file", uploadForm.file);
+      fd.append("albumName", uploadForm.albumName.trim());
+      const res = await fetch("https://eoefjevfwrqkfnmcftmp.supabase.co/functions/v1/upload-to-drive", {
+        method: "POST",
+        body: fd,
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Error al subir");
+      const { data, error } = await supabase.from("guest_uploads").insert({
+        title: uploadForm.albumName.trim(),
+        type: uploadForm.type,
+        url: result.url
+      }).select().single();
+      if (error) throw new Error(error.message);
+      setItems(i => [data, ...i]);
+      showGuestToast("¡Archivo compartido exitosamente!","success");
+      setShowUpload(false);
+      setUploadForm({ title:"", albumName:"", type:"foto", file:null });
+    } catch(e) {
+      showGuestToast("Error: " + e.message,"error");
+    }
     setUploading(false);
   };
 
@@ -2422,25 +2438,33 @@ function EmployeePortal({ user }) {
 
   const handleUpload = async () => {
     if (!uploadForm.title || !uploadForm.file) { showUpToast("Completa todos los campos","error"); return; }
-    const maxSize = uploadForm.type === "foto" ? 10*1024*1024 : 50*1024*1024;
-    const maxLabel = uploadForm.type === "foto" ? "10MB" : "50MB";
+    const maxSize = uploadForm.type === "foto" ? 25*1024*1024 : 500*1024*1024;
+    const maxLabel = uploadForm.type === "foto" ? "25MB" : "500MB";
     if (uploadForm.file.size > maxSize) { showUpToast(`El archivo supera el límite de ${maxLabel}`,"error"); return; }
     setUploading(true);
-    const ext = uploadForm.file.name.split(".").pop();
-    const filename = `${Date.now()}.${ext}`;
-    const { error: upErr } = await supabase.storage.from("gallery").upload(filename, uploadForm.file);
-    if (upErr) { showUpToast("Error al subir: "+upErr.message,"error"); setUploading(false); return; }
-    const { data: urlData } = supabase.storage.from("gallery").getPublicUrl(filename);
-    const { data, error } = await supabase.from("gallery").insert({
-      title: uploadForm.title, type: uploadForm.type, url: urlData.publicUrl,
-      folder: activeFolder || null, uploaded_by: user.id, uploaded_by_name: user.name
-    }).select().single();
-    if (error) { showUpToast("Error al guardar","error"); setUploading(false); return; }
-    setGallery(g => [data, ...g]);
-    if (activeFolder && !folders.includes(activeFolder)) setFolders(f=>[...f,activeFolder]);
-    showUpToast("Archivo subido","success");
-    setShowUpload(false);
-    setUploadForm({ title:"", type:"foto", file:null });
+    try {
+      const fd = new FormData();
+      fd.append("file", uploadForm.file);
+      fd.append("albumName", activeFolder || uploadForm.title);
+      const res = await fetch("https://eoefjevfwrqkfnmcftmp.supabase.co/functions/v1/upload-to-drive", {
+        method: "POST",
+        body: fd,
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Error al subir");
+      const { data, error } = await supabase.from("gallery").insert({
+        title: uploadForm.title, type: uploadForm.type, url: result.url,
+        folder: activeFolder || null, uploaded_by: user.id, uploaded_by_name: user.name
+      }).select().single();
+      if (error) throw new Error(error.message);
+      setGallery(g => [data, ...g]);
+      if (activeFolder && !folders.includes(activeFolder)) setFolders(f=>[...f,activeFolder]);
+      showUpToast("Archivo subido","success");
+      setShowUpload(false);
+      setUploadForm({ title:"", type:"foto", file:null });
+    } catch(e) {
+      showUpToast("Error: " + e.message,"error");
+    }
     setUploading(false);
   };
 
