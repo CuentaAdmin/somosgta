@@ -983,6 +983,12 @@ function GalleryModule({ currentUser }) {
   const [filter, setFilter] = useState("all");
   const [galToast, setGalToast] = useState(null);
   const [form, setForm] = useState({ title:"", type:"foto", file:null });
+  // ── Nuevos estados para selección masiva y ZIP ──
+  const [checkedIds, setCheckedIds] = useState([]);
+  const [selectMode, setSelectMode] = useState(false);
+  const [zipping, setZipping] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
 
   const showGalToast = (msg, type="info") => setGalToast({ msg, type, key: Date.now() });
 
@@ -996,6 +1002,72 @@ function GalleryModule({ currentUser }) {
       setLoading(false);
     });
   }, []);
+
+  // ── Salir de modo selección limpia checks ──
+  const exitSelectMode = () => { setSelectMode(false); setCheckedIds([]); };
+
+  const toggleCheck = (id, e) => {
+    e.stopPropagation();
+    setCheckedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const toggleAllVisible = (visibleItems) => {
+    const visibleIds = visibleItems.map(i => i.id);
+    const allChecked = visibleIds.every(id => checkedIds.includes(id));
+    if (allChecked) setCheckedIds(prev => prev.filter(id => !visibleIds.includes(id)));
+    else setCheckedIds(prev => [...new Set([...prev, ...visibleIds])]);
+  };
+
+  // ── Descarga ZIP ──
+  const downloadZip = async () => {
+    const toDownload = items.filter(i => checkedIds.includes(i.id));
+    if (toDownload.length === 0) { showGalToast("No hay archivos seleccionados","error"); return; }
+    setZipping(true);
+    showGalToast(`Preparando ZIP con ${toDownload.length} archivo(s)…`, "info");
+    try {
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+      const results = await Promise.allSettled(
+        toDownload.map(async (item) => {
+          const res = await fetch(item.url);
+          if (!res.ok) throw new Error(`No se pudo descargar: ${item.title}`);
+          const blob = await res.blob();
+          const ext = item.url.split("?")[0].split(".").pop() || (item.type === "foto" ? "jpg" : "mp4");
+          const safeName = item.title.replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ _-]/g, "_");
+          zip.file(`${safeName}.${ext}`, blob);
+        })
+      );
+      const failed = results.filter(r => r.status === "rejected").length;
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(zipBlob);
+      a.download = `galeria-gta-${Date.now()}.zip`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      if (failed > 0) showGalToast(`ZIP descargado (${failed} archivo(s) fallaron)`, "info");
+      else showGalToast(`ZIP con ${toDownload.length} archivo(s) descargado ✓`, "success");
+    } catch(e) {
+      showGalToast("Error al generar ZIP: " + e.message, "error");
+    }
+    setZipping(false);
+  };
+
+  // ── Eliminación masiva ──
+  const handleBulkDelete = async () => {
+    if (checkedIds.length === 0) return;
+    setDeleting(true);
+    setShowConfirmDelete(false);
+    try {
+      const { error } = await supabase.from("gallery").delete().in("id", checkedIds);
+      if (error) throw new Error(error.message);
+      setItems(prev => prev.filter(i => !checkedIds.includes(i.id)));
+      showGalToast(`${checkedIds.length} archivo(s) eliminado(s)`, "success");
+      exitSelectMode();
+    } catch(e) {
+      showGalToast("Error al eliminar: " + e.message, "error");
+    }
+    setDeleting(false);
+  };
 
   const handleUpload = async () => {
     if (!form.title) { showGalToast("El título es obligatorio","error"); return; }
@@ -1049,7 +1121,8 @@ function GalleryModule({ currentUser }) {
     return match ? `https://www.youtube.com/embed/${match[1]}` : null;
   };
 
-  const grouped = items.filter(i => filter==="all" || i.type===filter).reduce((acc, item) => {
+  const filteredItems = items.filter(i => filter==="all" || i.type===filter);
+  const grouped = filteredItems.reduce((acc, item) => {
     const date = new Date(item.created_at);
     const key = `${date.getFullYear()} — ${MONTHS[date.getMonth()]}`;
     if (!acc[key]) acc[key] = [];
@@ -1069,23 +1142,66 @@ function GalleryModule({ currentUser }) {
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24,flexWrap:"wrap",gap:12}}>
         <div style={{fontFamily:"'Exo 2',sans-serif",fontSize:18,fontWeight:700}}>🖼️ Galería Multimedia</div>
-        <div style={{display:"flex",gap:10,alignItems:"center"}}>
+        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
           <div style={{display:"flex",gap:4,background:C.card,border:`1px solid ${C.border}`,borderRadius:8,padding:4}}>
             {[["all","Todos"],["foto","Fotos"],["video","Videos"]].map(([val,label])=>(
               <button key={val} onClick={()=>setFilter(val)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,background:filter===val?C.blue:"transparent",color:filter===val?"#fff":C.muted,transition:"all 0.15s"}}>{label}</button>
             ))}
           </div>
-          {tab === "internal" && <button className="btn-sm btn-blue" onClick={()=>setShowForm(true)}>+ Subir</button>}
+          {tab === "internal" && isAdmin && !selectMode && (
+            <button className="btn-sm btn-ghost" onClick={()=>setSelectMode(true)} style={{fontSize:12}}>
+              ☑️ Seleccionar
+            </button>
+          )}
+          {tab === "internal" && isAdmin && selectMode && (
+            <button className="btn-sm btn-ghost" onClick={exitSelectMode} style={{fontSize:12}}>
+              ✕ Cancelar
+            </button>
+          )}
+          {tab === "internal" && !selectMode && <button className="btn-sm btn-blue" onClick={()=>setShowForm(true)}>+ Subir</button>}
         </div>
       </div>
+
+      {/* BARRA DE ACCIONES MASIVAS — visible solo en modo selección para admin */}
+      {tab === "internal" && isAdmin && selectMode && (
+        <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",background:`${C.blue}12`,border:`1px solid ${C.blue}33`,borderRadius:10,marginBottom:20,flexWrap:"wrap"}}>
+          <span style={{fontSize:13,fontWeight:600,color:C.blue}}>
+            {checkedIds.length} seleccionado(s) de {filteredItems.length}
+          </span>
+          <button className="btn-sm btn-ghost" onClick={()=>toggleAllVisible(filteredItems)} style={{fontSize:12}}>
+            {filteredItems.every(i=>checkedIds.includes(i.id)) ? "Deseleccionar todos" : "Seleccionar todos"}
+          </button>
+          <div style={{flex:1}}/>
+          {checkedIds.length > 0 && (
+            <>
+              <button
+                className="btn-sm btn-blue"
+                onClick={downloadZip}
+                disabled={zipping}
+                style={{fontSize:12}}
+              >
+                {zipping ? "⏳ Generando ZIP…" : `⬇️ Descargar ZIP (${checkedIds.length})`}
+              </button>
+              <button
+                className="btn-sm btn-danger"
+                onClick={()=>setShowConfirmDelete(true)}
+                disabled={deleting}
+                style={{fontSize:12}}
+              >
+                {deleting ? "⏳ Eliminando…" : `🗑 Eliminar (${checkedIds.length})`}
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* TABS — solo para admin/superadmin */}
       {isAdmin && (
         <div style={{display:"flex",gap:4,background:C.darker,border:`1px solid ${C.border}`,borderRadius:10,padding:4,marginBottom:24,width:"fit-content"}}>
-          <button onClick={()=>setTab("internal")} style={{padding:"8px 20px",borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:tab==="internal"?C.card:"transparent",color:tab==="internal"?C.text:C.muted,transition:"all 0.15s",boxShadow:tab==="internal"?`0 2px 8px rgba(0,0,0,0.3)`:"none"}}>
+          <button onClick={()=>{setTab("internal");exitSelectMode();}} style={{padding:"8px 20px",borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:tab==="internal"?C.card:"transparent",color:tab==="internal"?C.text:C.muted,transition:"all 0.15s",boxShadow:tab==="internal"?`0 2px 8px rgba(0,0,0,0.3)`:"none"}}>
             🖼️ Galería Interna
           </button>
-          <button onClick={()=>setTab("guests")} style={{padding:"8px 20px",borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:tab==="guests"?C.card:"transparent",color:tab==="guests"?C.orange:C.muted,transition:"all 0.15s",boxShadow:tab==="guests"?`0 2px 8px rgba(0,0,0,0.3)`:"none",display:"flex",alignItems:"center",gap:6}}>
+          <button onClick={()=>{setTab("guests");exitSelectMode();}} style={{padding:"8px 20px",borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:600,background:tab==="guests"?C.card:"transparent",color:tab==="guests"?C.orange:C.muted,transition:"all 0.15s",boxShadow:tab==="guests"?`0 2px 8px rgba(0,0,0,0.3)`:"none",display:"flex",alignItems:"center",gap:6}}>
             🌐 Subidas de Invitados
             {guestItems.length > 0 && <span style={{background:C.orange,color:"#fff",fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{guestItems.length}</span>}
           </button>
@@ -1111,21 +1227,45 @@ function GalleryModule({ currentUser }) {
                 <span style={{fontSize:12}}>{monthItems.length} archivo(s)</span>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
-                {monthItems.map(item => (
-                  <div key={item.id} onClick={()=>setSelected(item)} style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",cursor:"pointer",transition:"transform 0.15s, box-shadow 0.15s"}}
-                    onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow="0 8px 24px rgba(0,0,0,0.3)";}}
-                    onMouseLeave={e=>{e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="none";}}>
-                    {item.type === "foto" ? (
-                      <img src={item.url} alt={item.title} style={{width:"100%",height:140,objectFit:"cover"}} onError={e=>e.target.style.display="none"}/>
-                    ) : (
-                      <div style={{width:"100%",height:140,background:C.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:36}}>▶️</div>
-                    )}
-                    <div style={{padding:"10px 12px"}}>
-                      <div style={{fontSize:13,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.title}</div>
-                      <div style={{fontSize:11,color:C.muted,marginTop:3}}>{item.uploaded_by_name} · {new Date(item.created_at).toLocaleDateString("es")}</div>
+                {monthItems.map(item => {
+                  const isChecked = checkedIds.includes(item.id);
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={selectMode ? (e)=>toggleCheck(item.id,e) : ()=>setSelected(item)}
+                      style={{
+                        background:C.card,
+                        border:`1px solid ${isChecked?C.blue:C.border}`,
+                        borderRadius:12,
+                        overflow:"hidden",
+                        cursor:"pointer",
+                        transition:"transform 0.15s, box-shadow 0.15s",
+                        position:"relative",
+                        boxShadow: isChecked?`0 0 0 2px ${C.blue}66`:"none",
+                      }}
+                      onMouseEnter={e=>{if(!isChecked){e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow="0 8px 24px rgba(0,0,0,0.3)";}}}
+                      onMouseLeave={e=>{e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow=isChecked?`0 0 0 2px ${C.blue}66`:"none";}}>
+                      {/* Checkbox overlay — visible solo en modo selección para admin */}
+                      {isAdmin && selectMode && (
+                        <div
+                          style={{position:"absolute",top:8,left:8,zIndex:10,width:22,height:22,borderRadius:6,border:`2px solid ${isChecked?C.blue:"rgba(255,255,255,0.6)"}`,background:isChecked?C.blue:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}}
+                          onClick={(e)=>toggleCheck(item.id,e)}
+                        >
+                          {isChecked && <span style={{color:"#fff",fontSize:13,fontWeight:700,lineHeight:1}}>✓</span>}
+                        </div>
+                      )}
+                      {item.type === "foto" ? (
+                        <img src={item.url} alt={item.title} style={{width:"100%",height:140,objectFit:"cover",filter:isChecked?"brightness(0.7)":"none",transition:"filter 0.15s"}} onError={e=>e.target.style.display="none"}/>
+                      ) : (
+                        <div style={{width:"100%",height:140,background:C.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:36}}>▶️</div>
+                      )}
+                      <div style={{padding:"10px 12px"}}>
+                        <div style={{fontSize:13,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.title}</div>
+                        <div style={{fontSize:11,color:C.muted,marginTop:3}}>{item.uploaded_by_name} · {new Date(item.created_at).toLocaleDateString("es")}</div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ))}
@@ -1223,6 +1363,27 @@ function GalleryModule({ currentUser }) {
         </div>
       )}
 
+      {/* MODAL CONFIRMACIÓN ELIMINAR */}
+      {showConfirmDelete && (
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowConfirmDelete(false)}>
+          <div className="modal" style={{maxWidth:420}}>
+            <div className="modal-title" style={{color:"#ff7070"}}>🗑 Confirmar eliminación</div>
+            <p style={{fontSize:14,color:C.muted,lineHeight:1.6,marginBottom:8}}>
+              Estás a punto de eliminar <strong style={{color:C.text}}>{checkedIds.length} archivo(s)</strong> de la galería.
+            </p>
+            <p style={{fontSize:13,color:"#ff7070",padding:"10px 14px",background:"#ff4d4d12",borderRadius:8,border:"1px solid #ff4d4d30"}}>
+              ⚠️ Esta acción es irreversible. Los registros serán eliminados de la base de datos.
+            </p>
+            <div className="modal-actions">
+              <button className="btn-sm btn-ghost" onClick={()=>setShowConfirmDelete(false)}>Cancelar</button>
+              <button className="btn-sm btn-danger" onClick={handleBulkDelete} disabled={deleting} style={{background:"#ff4d4d",color:"#fff",border:"none"}}>
+                {deleting ? "Eliminando…" : `Sí, eliminar ${checkedIds.length} archivo(s)`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showForm && (
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowForm(false)}>
           <div className="modal" style={{maxWidth:480}}>
@@ -1257,7 +1418,7 @@ function GalleryModule({ currentUser }) {
               </div>
             )}
             <div style={{fontSize:12,color:C.muted,marginTop:8,padding:"10px",background:`${C.orange}11`,borderRadius:8,border:`1px solid ${C.orange}22`}}>
-              ⚠️ Los archivos subidos son <strong>permanentes</strong> y no podrán ser eliminados.
+              ⚠️ Los archivos subidos son <strong>permanentes</strong> y no podrán ser eliminados individualmente.
             </div>
             <div className="modal-actions">
               <button className="btn-sm btn-ghost" onClick={()=>setShowForm(false)}>Cancelar</button>
