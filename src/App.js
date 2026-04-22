@@ -983,12 +983,18 @@ function GalleryModule({ currentUser }) {
   const [filter, setFilter] = useState("all");
   const [galToast, setGalToast] = useState(null);
   const [form, setForm] = useState({ title:"", type:"foto", file:null });
-  // ── Nuevos estados para selección masiva y ZIP ──
+  // ── Estados selección masiva — Galería Interna ──
   const [checkedIds, setCheckedIds] = useState([]);
   const [selectMode, setSelectMode] = useState(false);
   const [zipping, setZipping] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+  // ── Estados selección masiva — Subidas de Invitados ──
+  const [guestCheckedIds, setGuestCheckedIds] = useState([]);
+  const [guestSelectMode, setGuestSelectMode] = useState(false);
+  const [guestZipping, setGuestZipping] = useState(false);
+  const [guestDeleting, setGuestDeleting] = useState(false);
+  const [showGuestConfirmDelete, setShowGuestConfirmDelete] = useState(false);
 
   const showGalToast = (msg, type="info") => setGalToast({ msg, type, key: Date.now() });
 
@@ -1121,6 +1127,68 @@ function GalleryModule({ currentUser }) {
     return match ? `https://www.youtube.com/embed/${match[1]}` : null;
   };
 
+  // ── Funciones selección masiva — Subidas de Invitados ──
+  const exitGuestSelectMode = () => { setGuestSelectMode(false); setGuestCheckedIds([]); };
+
+  const toggleGuestCheck = (id, e) => {
+    e.stopPropagation();
+    setGuestCheckedIds(prev => prev.includes(id) ? prev.filter(x=>x!==id) : [...prev, id]);
+  };
+
+  const toggleAllGuests = (visibleItems) => {
+    const visibleIds = visibleItems.map(i => i.id);
+    const allChecked = visibleIds.every(id => guestCheckedIds.includes(id));
+    if (allChecked) setGuestCheckedIds(prev => prev.filter(id => !visibleIds.includes(id)));
+    else setGuestCheckedIds(prev => [...new Set([...prev, ...visibleIds])]);
+  };
+
+  const downloadGuestZip = async () => {
+    const toDownload = guestItems.filter(i => guestCheckedIds.includes(i.id));
+    if (toDownload.length === 0) { showGalToast("No hay archivos seleccionados","error"); return; }
+    setGuestZipping(true);
+    showGalToast(`Preparando ZIP con ${toDownload.length} archivo(s)…`, "info");
+    try {
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+      await Promise.allSettled(
+        toDownload.map(async (item) => {
+          const res = await fetch(item.url);
+          if (!res.ok) throw new Error();
+          const blob = await res.blob();
+          const ext = item.url.split("?")[0].split(".").pop() || (item.type === "foto" ? "jpg" : "mp4");
+          const safeName = item.title.replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ _-]/g, "_");
+          zip.file(`${safeName}.${ext}`, blob);
+        })
+      );
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(zipBlob);
+      a.download = `invitados-gta-${Date.now()}.zip`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      showGalToast(`ZIP con ${toDownload.length} archivo(s) descargado ✓`, "success");
+    } catch(e) {
+      showGalToast("Error al generar ZIP: " + e.message, "error");
+    }
+    setGuestZipping(false);
+  };
+
+  const handleGuestBulkDelete = async () => {
+    if (guestCheckedIds.length === 0) return;
+    setGuestDeleting(true);
+    setShowGuestConfirmDelete(false);
+    try {
+      const { error } = await supabase.from("guest_uploads").delete().in("id", guestCheckedIds);
+      if (error) throw new Error(error.message);
+      setGuestItems(prev => prev.filter(i => !guestCheckedIds.includes(i.id)));
+      showGalToast(`${guestCheckedIds.length} archivo(s) eliminado(s)`, "success");
+      exitGuestSelectMode();
+    } catch(e) {
+      showGalToast("Error al eliminar: " + e.message, "error");
+    }
+    setGuestDeleting(false);
+  };
+
   const filteredItems = items.filter(i => filter==="all" || i.type===filter);
   const grouped = filteredItems.reduce((acc, item) => {
     const date = new Date(item.created_at);
@@ -1158,11 +1226,21 @@ function GalleryModule({ currentUser }) {
               ✕ Cancelar
             </button>
           )}
+          {tab === "guests" && isAdmin && !guestSelectMode && (
+            <button className="btn-sm btn-ghost" onClick={()=>setGuestSelectMode(true)} style={{fontSize:12}}>
+              ☑️ Seleccionar
+            </button>
+          )}
+          {tab === "guests" && isAdmin && guestSelectMode && (
+            <button className="btn-sm btn-ghost" onClick={exitGuestSelectMode} style={{fontSize:12}}>
+              ✕ Cancelar
+            </button>
+          )}
           {tab === "internal" && !selectMode && <button className="btn-sm btn-blue" onClick={()=>setShowForm(true)}>+ Subir</button>}
         </div>
       </div>
 
-      {/* BARRA DE ACCIONES MASIVAS — visible solo en modo selección para admin */}
+      {/* BARRA DE ACCIONES MASIVAS — Galería Interna */}
       {tab === "internal" && isAdmin && selectMode && (
         <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",background:`${C.blue}12`,border:`1px solid ${C.blue}33`,borderRadius:10,marginBottom:20,flexWrap:"wrap"}}>
           <span style={{fontSize:13,fontWeight:600,color:C.blue}}>
@@ -1174,21 +1252,34 @@ function GalleryModule({ currentUser }) {
           <div style={{flex:1}}/>
           {checkedIds.length > 0 && (
             <>
-              <button
-                className="btn-sm btn-blue"
-                onClick={downloadZip}
-                disabled={zipping}
-                style={{fontSize:12}}
-              >
+              <button className="btn-sm btn-blue" onClick={downloadZip} disabled={zipping} style={{fontSize:12}}>
                 {zipping ? "⏳ Generando ZIP…" : `⬇️ Descargar ZIP (${checkedIds.length})`}
               </button>
-              <button
-                className="btn-sm btn-danger"
-                onClick={()=>setShowConfirmDelete(true)}
-                disabled={deleting}
-                style={{fontSize:12}}
-              >
+              <button className="btn-sm btn-danger" onClick={()=>setShowConfirmDelete(true)} disabled={deleting} style={{fontSize:12}}>
                 {deleting ? "⏳ Eliminando…" : `🗑 Eliminar (${checkedIds.length})`}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* BARRA DE ACCIONES MASIVAS — Subidas de Invitados */}
+      {tab === "guests" && isAdmin && guestSelectMode && (
+        <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",background:`${C.orange}12`,border:`1px solid ${C.orange}33`,borderRadius:10,marginBottom:20,flexWrap:"wrap"}}>
+          <span style={{fontSize:13,fontWeight:600,color:C.orange}}>
+            {guestCheckedIds.length} seleccionado(s) de {guestItems.filter(i=>filter==="all"||i.type===filter).length}
+          </span>
+          <button className="btn-sm btn-ghost" onClick={()=>toggleAllGuests(guestItems.filter(i=>filter==="all"||i.type===filter))} style={{fontSize:12}}>
+            {guestItems.filter(i=>filter==="all"||i.type===filter).every(i=>guestCheckedIds.includes(i.id)) ? "Deseleccionar todos" : "Seleccionar todos"}
+          </button>
+          <div style={{flex:1}}/>
+          {guestCheckedIds.length > 0 && (
+            <>
+              <button className="btn-sm btn-blue" onClick={downloadGuestZip} disabled={guestZipping} style={{fontSize:12}}>
+                {guestZipping ? "⏳ Generando ZIP…" : `⬇️ Descargar ZIP (${guestCheckedIds.length})`}
+              </button>
+              <button className="btn-sm btn-danger" onClick={()=>setShowGuestConfirmDelete(true)} disabled={guestDeleting} style={{fontSize:12}}>
+                {guestDeleting ? "⏳ Eliminando…" : `🗑 Eliminar (${guestCheckedIds.length})`}
               </button>
             </>
           )}
@@ -1292,21 +1383,35 @@ function GalleryModule({ currentUser }) {
                 <span style={{fontSize:12}}>{monthItems.length} archivo(s)</span>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
-                {monthItems.map(item => (
-                  <div key={item.id} onClick={()=>setSelectedGuest(item)} style={{background:C.card,border:`1px solid ${C.orange}33`,borderRadius:12,overflow:"hidden",cursor:"pointer",transition:"transform 0.15s, box-shadow 0.15s"}}
-                    onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow=`0 8px 24px ${C.orange}22`;}}
-                    onMouseLeave={e=>{e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="none";}}>
-                    {item.type === "foto" ? (
-                      <img src={item.url} alt={item.title} style={{width:"100%",height:140,objectFit:"cover"}} onError={e=>e.target.style.display="none"}/>
-                    ) : (
-                      <div style={{width:"100%",height:140,background:C.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:36}}>▶️</div>
-                    )}
-                    <div style={{padding:"10px 12px"}}>
-                      <div style={{fontSize:13,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.title}</div>
-                      <div style={{fontSize:11,color:C.muted,marginTop:3}}>Invitado · {new Date(item.created_at).toLocaleDateString("es")}</div>
+                {monthItems.map(item => {
+                  const isChecked = guestCheckedIds.includes(item.id);
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={guestSelectMode ? (e)=>toggleGuestCheck(item.id,e) : ()=>setSelectedGuest(item)}
+                      style={{background:C.card,border:`1px solid ${isChecked?C.orange:C.orange+"33"}`,borderRadius:12,overflow:"hidden",cursor:"pointer",transition:"transform 0.15s, box-shadow 0.15s",position:"relative",boxShadow:isChecked?`0 0 0 2px ${C.orange}88`:"none"}}
+                      onMouseEnter={e=>{if(!isChecked){e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow=`0 8px 24px ${C.orange}22`;}}}
+                      onMouseLeave={e=>{e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow=isChecked?`0 0 0 2px ${C.orange}88`:"none";}}>
+                      {isAdmin && guestSelectMode && (
+                        <div
+                          style={{position:"absolute",top:8,left:8,zIndex:10,width:22,height:22,borderRadius:6,border:`2px solid ${isChecked?C.orange:"rgba(255,255,255,0.6)"}`,background:isChecked?C.orange:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}}
+                          onClick={(e)=>toggleGuestCheck(item.id,e)}
+                        >
+                          {isChecked && <span style={{color:"#fff",fontSize:13,fontWeight:700,lineHeight:1}}>✓</span>}
+                        </div>
+                      )}
+                      {item.type === "foto" ? (
+                        <img src={item.url} alt={item.title} style={{width:"100%",height:140,objectFit:"cover",filter:isChecked?"brightness(0.7)":"none",transition:"filter 0.15s"}} onError={e=>e.target.style.display="none"}/>
+                      ) : (
+                        <div style={{width:"100%",height:140,background:C.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:36}}>▶️</div>
+                      )}
+                      <div style={{padding:"10px 12px"}}>
+                        <div style={{fontSize:13,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.title}</div>
+                        <div style={{fontSize:11,color:C.muted,marginTop:3}}>Invitado · {new Date(item.created_at).toLocaleDateString("es")}</div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ))}
@@ -1423,6 +1528,27 @@ function GalleryModule({ currentUser }) {
             <div className="modal-actions">
               <button className="btn-sm btn-ghost" onClick={()=>setShowForm(false)}>Cancelar</button>
               <button className="btn-sm btn-blue" onClick={handleUpload} disabled={uploading}>{uploading?"Subiendo…":"Subir Archivo"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMACIÓN ELIMINAR — Subidas de Invitados */}
+      {showGuestConfirmDelete && (
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowGuestConfirmDelete(false)}>
+          <div className="modal" style={{maxWidth:420}}>
+            <div className="modal-title" style={{color:"#ff7070"}}>🗑 Confirmar eliminación</div>
+            <p style={{fontSize:14,color:C.muted,lineHeight:1.6,marginBottom:8}}>
+              Estás a punto de eliminar <strong style={{color:C.text}}>{guestCheckedIds.length} archivo(s)</strong> de Subidas de Invitados.
+            </p>
+            <p style={{fontSize:13,color:"#ff7070",padding:"10px 14px",background:"#ff4d4d12",borderRadius:8,border:"1px solid #ff4d4d30"}}>
+              ⚠️ Esta acción es irreversible.
+            </p>
+            <div className="modal-actions">
+              <button className="btn-sm btn-ghost" onClick={()=>setShowGuestConfirmDelete(false)}>Cancelar</button>
+              <button className="btn-sm btn-danger" onClick={handleGuestBulkDelete} disabled={guestDeleting} style={{background:"#ff4d4d",color:"#fff",border:"none"}}>
+                {guestDeleting ? "Eliminando…" : `Sí, eliminar ${guestCheckedIds.length} archivo(s)`}
+              </button>
             </div>
           </div>
         </div>
